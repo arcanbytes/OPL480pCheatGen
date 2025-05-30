@@ -58,7 +58,7 @@ python OPL480pCheatGen.py "F:\RetroBat\roms\ps2\Game.iso" --preview --force-240p
 ## 📝 License
 
 MIT License – see LICENSE file for details.
-Copyright (c) 2025 ArcanBytes
+Copyright (c) 2025 ArcanBytes<br>
 <img src="img/OPL480pCheatGen.png" width="300">
 
 ---
