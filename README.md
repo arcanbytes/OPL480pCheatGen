@@ -2,12 +2,20 @@
 
 ![Banner](img/OPL480pCheatGen_banner.png)
 
+
 **OPL480pCheatGen** is a tool for generating `.cht` cheat files compatible with [Open PS2 Loader (OPL)](https://github.com/ifcaro/Open-PS2-Loader), allowing you to force 480p, 240p, and progressive video modes in your PlayStation 2 games **without modifying ISOs**.
 
 > ✅ No patching required  
 > ✅ Runs offline  
 > ✅ Generates `.cht` files for use with OPL  
 > ✅ Works directly with ISO files
+
+---
+
+## 📦 Download
+
+You can always get the latest compiled version here:
+👉 [Download Latest Release](https://github.com/arcanbytes/OPL480pCheatGen/releases/latest)
 
 ---
 
@@ -67,6 +75,6 @@ Copyright (c) 2025 ArcanBytes<br>
 
 ## 🙏 Credits
 
-Created by ArcanBytes, built for the PS2 homebrew and OPL community. 
-Mastercode database based on: [PS2-Widescreen/Bare-Mastercodes-bin](https://github.com/PS2-Widescreen/Bare-Mastercodes-bin)
+Created by ArcanBytes, built for the PS2 homebrew and OPL community.<br> 
+Mastercode database based on: [PS2-Widescreen/Bare-Mastercodes-bin](https://github.com/PS2-Widescreen/Bare-Mastercodes-bin)<br>
 Original inspiration / idea: [asmodean's ps2force480p](http://asmodean.reverse.net/pages/ps2force480p.html)
