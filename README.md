@@ -35,6 +35,8 @@ Run `OPL480pCheatGenGUI.exe`:
 ✔️ Saves `.cht` next to the `.exe` by default  
 ✔️ Ideal for use with OPL Manager Cheat Editor 
 
+<img src="img/OPL480pCheatGen_screenshot_01.jpg" width="850">
+
 ---
 
 ## 🧪 Command-Line Interface
@@ -65,6 +67,6 @@ Copyright (c) 2025 ArcanBytes<br>
 
 ## 🙏 Credits
 
-Built for the PS2 homebrew and OPL community. 
+Created by ArcanBytes, built for the PS2 homebrew and OPL community. 
 Mastercode database based on: [PS2-Widescreen/Bare-Mastercodes-bin](https://github.com/PS2-Widescreen/Bare-Mastercodes-bin)
 Original inspiration / idea: [asmodean's ps2force480p](http://asmodean.reverse.net/pages/ps2force480p.html)

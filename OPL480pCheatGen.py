@@ -126,6 +126,8 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
     # Normalize and clean up the title string to avoid encoding errors
     if title:
         title = title.replace('\ufeff', '').replace("“", '"').replace("”", '"').strip()
+    if title and not (title.startswith('"') and title.endswith('"')):
+        title = f'"{title.strip("\"")}"'    
 
     if not title or not mc:
         print("[WARN] Missing title or mastercode. Proceeding with generic values.")

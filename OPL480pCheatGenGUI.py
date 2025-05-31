@@ -9,7 +9,7 @@ import sys
 class OPLCheatGUI:
     def __init__(self, root):
         self.root = root
-        root.title("OPL480pCheatGen — 480p/240p Cheat Generator — © 2025 ArcanBytes | tiempoinfinito.com")
+        root.title("OPL480pCheatGen — 480p/240p Cheat Generator v1.0.1 — © 2025 ArcanBytes | tiempoinfinito.com")
         self.current_cht_text = ""
         self.current_cht_filename = None
 
