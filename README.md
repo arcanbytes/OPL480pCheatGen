@@ -67,6 +67,20 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
 
 ---
 
+## ⚠️ Generated Codes Effectiveness
+
+It's important to note that the effectiveness of generated .cht codes for forcing progressive video modes can be limited and vary significantly between games. The application of these patches often involves a "trial and error" approach due to the specific characteristics of each game and how it handles video output.
+
+If, after applying the generated .cht file, you experience issues such as:
+- Black screen.
+- Visual artifacts.
+- Corrupted graphics.
+- The game failing to launch correctly.
+
+We recommend trying the integrated OPL GSM (Graphics Synthesizer Mode Selector), specifically the "HDTV 480p Mode" (or similar, depending on your OPL version) found within each game's configuration. GSM is a hardware-level video scaling solution that often offers broader compatibility, though it may introduce its own performance issues or visual glitches in certain titles.
+
+---
+
 ## 📝 License
 
 MIT License – see LICENSE file for details.
