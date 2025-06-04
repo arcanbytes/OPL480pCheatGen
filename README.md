@@ -26,6 +26,7 @@ You can always get the latest compiled version here:
 - ✅ **Optional Patches**:
   - Enable PAL 60Hz (for PAL-region games)
   - Force 240p output
+  - Adjust vertical offset (DY)
 - ✅ **Fully Offline**: Loads titles and mastercodes from a built-in database (5300+ entries)
 - ✅ **Supports GUI and CLI**
 
@@ -54,14 +55,29 @@ Run the tool directly via Python or the `.exe`:
 ```bash
 # Basic usage examples
 python OPL480pCheatGen.py "Game.iso"
-python OPL480pCheatGen.py "F:\RetroBat\roms\ps2\Game.iso" --preview --force-240p
+OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
 
 # Optional flags:
 --preview-only        # Show .cht content in console, do not write file
 --pal60               # Enable PAL 60Hz mode (for PAL games)
 --force-240p          # Use 240p instead of 480p
---mastercode "..."    # Manually override mastercode
+--dy 51              # Override vertical offset (DY)
+--mastercode "CODE"    # Manually override mastercode
 ```
+
+---
+
+## ⚠️ Generated Codes Effectiveness
+
+It's important to note that the effectiveness of generated .cht codes for forcing progressive video modes can be limited and vary significantly between games. The application of these patches often involves a "trial and error" approach due to the specific characteristics of each game and how it handles video output.
+
+If, after applying the generated .cht file, you experience issues such as:
+- Black screen.
+- Visual artifacts.
+- Corrupted graphics.
+- The game failing to launch correctly.
+
+We recommend trying the integrated OPL GSM (Graphics Synthesizer Mode Selector), specifically the "HDTV 480p Mode" (or similar, depending on your OPL version) found within each game's configuration. GSM is a hardware-level video scaling solution that often offers broader compatibility, though it may introduce its own performance issues or visual glitches in certain titles.
 
 ---
 
