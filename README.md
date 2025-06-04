@@ -55,14 +55,14 @@ Run the tool directly via Python or the `.exe`:
 ```bash
 # Basic usage examples
 python OPL480pCheatGen.py "Game.iso"
-python OPL480pCheatGen.py "F:\RetroBat\roms\ps2\Game.iso" --preview --force-240p
+OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
 
 # Optional flags:
 --preview-only        # Show .cht content in console, do not write file
 --pal60               # Enable PAL 60Hz mode (for PAL games)
 --force-240p          # Use 240p instead of 480p
- --dy 51              # Override vertical offset (DY)
---mastercode "..."    # Manually override mastercode
+--dy 51              # Override vertical offset (DY)
+--mastercode "CODE"    # Manually override mastercode
 ```
 
 ---

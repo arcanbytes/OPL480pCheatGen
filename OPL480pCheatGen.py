@@ -385,11 +385,10 @@ def format_cht_text(cheats):
 
 # CLI
 if __name__ == '__main__':
-    print(f"[INFO] OPL480pCheatGen starting on {sys.argv[1]}")
     p = argparse.ArgumentParser(description="Generate OPL .cht (ELF or ISO)")
     p.add_argument('input', help='ELF file or ISO image')
     p.add_argument('--elfpath', help='Path inside ISO to ELF (e.g. SLUS_123.45;1)')
-    p.add_argument('--mastercode', help='Manual mastercode override')
+    p.add_argument('--mastercode', help='Manual mastercode override', metavar='CODE')
     p.add_argument('--preview-only', dest='preview_only', action='store_true',
                help='Only generate .cht content to stdout, do not write any files')
     p.add_argument('--no-interlace-patch', dest='interlace_patch', action='store_false',
@@ -399,7 +398,11 @@ if __name__ == '__main__':
     p.add_argument('--pal60', dest='pal60', action='store_true',
                    help='Enable PAL 60Hz patch for PAL region games')
     p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
+    if len(sys.argv) == 1:
+        p.print_help()
+        sys.exit(0)  
     args = p.parse_args()
+    print(f"[INFO] OPL480pCheatGen starting on {args.input}")
 
     if args.input.lower().endswith('.iso'):
         elf, base = extract_from_iso(args.input, args.elfpath)

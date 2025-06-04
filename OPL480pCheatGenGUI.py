@@ -9,7 +9,7 @@ import sys
 class OPLCheatGUI:
     def __init__(self, root):
         self.root = root
-        root.title("OPL480pCheatGen — 480p/240p Cheat Generator v1.0.1 — © 2025 ArcanBytes | tiempoinfinito.com")
+        root.title("OPL480pCheatGen — 480p/240p Cheat Generator v1.1.0 — © 2025 ArcanBytes | tiempoinfinito.com")
         self.current_cht_text = ""
         self.current_cht_filename = None
 
@@ -26,7 +26,7 @@ class OPLCheatGUI:
         self.disable_interlace = tk.BooleanVar(value=True)
         self.pal60_patch = tk.BooleanVar()
         self.dy_patch = tk.BooleanVar()
-        self.dy_value = tk.IntVar(value=0)
+        self.dy_value = tk.IntVar(value=51)
         options = ttk.LabelFrame(root, text="Options")
         options.pack(fill='x', padx=10, pady=5)
 
