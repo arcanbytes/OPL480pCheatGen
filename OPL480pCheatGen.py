@@ -239,6 +239,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 default_mode = m
             all_d2 += d2
 
+        dy_patch = None
         if new_dy is not None:
             for seg in elf.iter_segments():
                 if seg['p_type'] != 'PT_LOAD':
@@ -247,8 +248,8 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 off = find_pattern(data, SCEGSPUTDISPENV_SIG)
                 if off >= 0:
                     print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
-                    dy_patch = generate_putdispenv_patch(new_dy, seg_base)
-                    cheats.append((f"//Vertical Offset DY={new_dy}", dy_patch))
+                    dy_vals = generate_putdispenv_patch(new_dy, seg_base)
+                    dy_patch = (f"//Vertical Offset DY={new_dy}", dy_vals)
                     break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
@@ -266,6 +267,9 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             print(f"[INFO] Applying {patch_title[2:]}.")
         else:
             print(f"[INFO] Skipping {patch_title[2:]}.")
+
+    if dy_patch:
+        cheats.append(dy_patch)
 
     # No-interlace patch
     if all_d2:
