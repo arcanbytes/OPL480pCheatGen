@@ -22,6 +22,10 @@ SCEGSRESETGRAPH_SIG = bytes([
     0x00,0x00,0xB0,0xFF,0x03,0x8C,0x05,0x00,
     0x03,0x94,0x06,0x00
 ])
+SCEGSPUTDISPENV_SIG = bytes([
+    0x2D,0x80,0x80,0x00,0x06,0x00,0x43,0x84,
+    0x01,0x00,0x02,0x24,0x11,0x00,0x62,0x14
+])
 DISPLAY1_ADDR = 0x12000000
 DISPLAY2_ADDR = 0x120000A0
 
@@ -111,8 +115,43 @@ def analyze_display(insns, interlace_patch=True):
                     d2.append((code, 0x00000000))
     return mode, d2
 
+def generate_putdispenv_patch(dy_value, base_addr, patch_offset=0x100, return_offset=12):
+    """Return cheat codes to override DY via sceGsPutDispEnv.
+
+    Parameters
+    ----------
+    dy_value : int
+        Vertical offset value written to the DY field.
+    base_addr : int
+        Base address of the sceGsPutDispEnv function in memory.
+    patch_offset : int, optional
+        Offset from ``base_addr`` where the patch code will be placed.
+    return_offset : int, optional
+        Offset from ``fv`` to jump back after executing the patch.
+
+    Returns
+    -------
+    list of tuple
+        Pairs of (address, value) ready for insertion into a ``.cht`` file.
+    """
+
+    fv = base_addr + patch_offset
+    ret = fv + return_offset
+    vals = [
+        0x8C900018,                  # lw $s0, 0x18($a0)
+        0x3C02FF80,                  # lui $v0, 0xFF80
+        0x24420FFF,                  # addiu $v0, $v0, 0x0FFF
+        0x00501024,                  # and $v0, $v0, $s0
+        0x24100000 | dy_value,       # li $s0, DY
+        0x00108300,                  # sll $s0, $s0, 0x0C
+        0x02028025,                  # or $s0, $s0, $v0
+        0x08000000 | (ret // 4),     # j ret
+        0xAC900018                   # sw $s0, 0x18($a0)
+    ]
+    return [((0x20 << 24) | ((fv + i * 4) & 0x00FFFFFF), val) for i, val in enumerate(vals)]
+
 # Main extraction & patch logic
-def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True, force_240p=False, pal60=False):
+def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True, force_240p=False, pal60=False, new_dy=None):
     fname = os.path.basename(elf_path)
     if base_override:
         base = base_override
@@ -127,7 +166,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
     if title:
         title = title.replace('\ufeff', '').replace("“", '"').replace("”", '"').strip()
     if title and not (title.startswith('"') and title.endswith('"')):
-        title = f'"{title.strip("\"")}"'    
+        title = '"' + title.strip('"') + '"'
 
     if not title or not mc:
         print("[WARN] Missing title or mastercode. Proceeding with generic values.")
@@ -199,6 +238,18 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             if m and not default_mode:
                 default_mode = m
             all_d2 += d2
+
+        if new_dy is not None:
+            for seg in elf.iter_segments():
+                if seg['p_type'] != 'PT_LOAD':
+                    continue
+                data, seg_base = seg.data(), seg['p_vaddr']
+                off = find_pattern(data, SCEGSPUTDISPENV_SIG)
+                if off >= 0:
+                    print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
+                    dy_patch = generate_putdispenv_patch(new_dy, seg_base)
+                    cheats.append((f"//Vertical Offset DY={new_dy}", dy_patch))
+                    break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
@@ -343,6 +394,7 @@ if __name__ == '__main__':
                    help='Force the game into 240p progressive mode')
     p.add_argument('--pal60', dest='pal60', action='store_true',
                    help='Enable PAL 60Hz patch for PAL region games')
+    p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
     args = p.parse_args()
 
     if args.input.lower().endswith('.iso'):
@@ -353,7 +405,8 @@ if __name__ == '__main__':
             manual_mc=args.mastercode,
             interlace_patch=args.interlace_patch,
             force_240p=args.force_240p,
-            pal60=args.pal60
+            pal60=args.pal60,
+            new_dy=args.dy
         )
         if args.preview_only:
             print(format_cht_text(cheats))
@@ -365,7 +418,8 @@ if __name__ == '__main__':
             manual_mc=args.mastercode,
             interlace_patch=args.interlace_patch,
             force_240p=args.force_240p,
-            pal60=args.pal60
+            pal60=args.pal60,
+            new_dy=args.dy
         )
         if args.preview_only:
             print(format_cht_text(cheats))

@@ -25,12 +25,18 @@ class OPLCheatGUI:
         self.force_240p = tk.BooleanVar()
         self.disable_interlace = tk.BooleanVar(value=True)
         self.pal60_patch = tk.BooleanVar()
+        self.dy_patch = tk.BooleanVar()
+        self.dy_value = tk.IntVar(value=0)
         options = ttk.LabelFrame(root, text="Options")
         options.pack(fill='x', padx=10, pady=5)
 
         ttk.Checkbutton(options, text="Force 240p output", variable=self.force_240p).pack(anchor='w', padx=10)
         #ttk.Checkbutton(options, text="Disable interlace mode (480i)", variable=self.disable_interlace).pack(anchor='w', padx=10)
         ttk.Checkbutton(options, text="Enable 60Hz (for PAL games)", variable=self.pal60_patch).pack(anchor='w', padx=10)
+        dy_frame = ttk.Frame(options)
+        ttk.Checkbutton(dy_frame, text="Vertical offset", variable=self.dy_patch).pack(side='left')
+        tk.Spinbox(dy_frame, from_=-100, to=100, width=5, textvariable=self.dy_value).pack(side='left', padx=5)
+        dy_frame.pack(anchor='w', padx=10, pady=(0,5))
 
         # Generate button
         ttk.Button(root, text="Generate .cht", command=self.generate_cht).pack(pady=10)
@@ -105,7 +111,9 @@ class OPLCheatGUI:
         if self.force_240p.get():
             cmd.append("--force-240p")
         if self.pal60_patch.get():
-            cmd.append("--pal60")    
+            cmd.append("--pal60")
+        if self.dy_patch.get():
+            cmd.extend(["--dy", str(self.dy_value.get())])
         
         def run_patch():
             try:

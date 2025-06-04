@@ -26,6 +26,7 @@ You can always get the latest compiled version here:
 - ✅ **Optional Patches**:
   - Enable PAL 60Hz (for PAL-region games)
   - Force 240p output
+  - Adjust vertical offset (DY)
 - ✅ **Fully Offline**: Loads titles and mastercodes from a built-in database (5300+ entries)
 - ✅ **Supports GUI and CLI**
 
@@ -60,6 +61,7 @@ python OPL480pCheatGen.py "F:\RetroBat\roms\ps2\Game.iso" --preview --force-240p
 --preview-only        # Show .cht content in console, do not write file
 --pal60               # Enable PAL 60Hz mode (for PAL games)
 --force-240p          # Use 240p instead of 480p
+ --dy 51              # Override vertical offset (DY)
 --mastercode "..."    # Manually override mastercode
 ```
 
