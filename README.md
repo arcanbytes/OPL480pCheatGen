@@ -26,7 +26,7 @@ You can always get the latest compiled version here:
 - ✅ **Optional Patches**:
   - Enable PAL 60Hz (for PAL-region games)
   - Force 240p output
-  - Adjust vertical offset (DY)
+  - Adjust vertical offset (DY) by hooking `sceGsPutDispEnv`
 - ✅ **Fully Offline**: Loads titles and mastercodes from a built-in database (5300+ entries)
 - ✅ **Supports GUI and CLI**
 
@@ -61,7 +61,7 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
 --preview-only        # Show .cht content in console, do not write file
 --pal60               # Enable PAL 60Hz mode (for PAL games)
 --force-240p          # Use 240p instead of 480p
---dy 51              # Override vertical offset (DY)
+--dy 51              # Override vertical offset (DY) via sceGsPutDispEnv hook
 --mastercode "CODE"    # Manually override mastercode
 ```
 

@@ -254,10 +254,13 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     hook_addr = seg_base + off - 16 + 4
                     hook_target = seg_base + 0x100
                     j_code = 0x08000000 | ((hook_target // 4) & 0x03FFFFFF)
-                    hook_patch = ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)
-                    ret_addr = seg_base + off - 16 + 8
+                    hook_patch = [
+                        ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code),
+                        ((0x20 << 24) | ((hook_addr + 4) & 0x00FFFFFF), 0x00000000)
+                    ]
+                    ret_addr = seg_base + off - 16 + 12
                     dy_vals = generate_putdispenv_patch(new_dy, seg_base, return_addr=ret_addr)
-                    dy_patch = (f"//Vertical Offset DY={new_dy}", [hook_patch] + dy_vals)
+                    dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
                     break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
