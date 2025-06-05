@@ -2,7 +2,7 @@
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import json
-import sys, os, argparse, tempfile, re, struct
+import sys, os, argparse, tempfile, re
 from elftools.elf.elffile import ELFFile
 from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS32, CS_MODE_BIG_ENDIAN
 
@@ -26,8 +26,6 @@ SCEGSPUTDISPENV_SIG = bytes([
     0x2D,0x80,0x80,0x00,0x06,0x00,0x43,0x84,
     0x01,0x00,0x02,0x24,0x11,0x00,0x62,0x14
 ])
-CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
-CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
 DISPLAY1_ADDR = 0x12000000
 DISPLAY2_ADDR = 0x120000A0
 
@@ -117,7 +115,7 @@ def analyze_display(insns, interlace_patch=True):
                     d2.append((code, 0x00000000))
     return mode, d2
 
-def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100, return_offset=12, return_addr=None, patch_addr=None):
+def generate_putdispenv_patch(dy_value, base_addr, patch_offset=0x100, return_offset=12):
     """Return cheat codes to override DY via sceGsPutDispEnv.
 
     Parameters
@@ -127,19 +125,9 @@ def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100
     base_addr : int
         Base address of the sceGsPutDispEnv function in memory.
     patch_offset : int, optional
-        Offset from ``base_addr`` where the patch code will be placed when
-        ``patch_addr`` is not specified.
+        Offset from ``base_addr`` where the patch code will be placed.
     return_offset : int, optional
-        Offset from ``fv`` to jump back after executing the patch when
-        ``return_addr`` is not specified.
-    orig_inst : int
-        Instruction originally located at ``base_addr + 4`` that will be
-        executed at the start of the patch.
-    return_addr : int, optional
-        Absolute address to return to after executing the patch.
-    patch_addr : int, optional
-        Absolute address where the DY patch code will be placed. If omitted,
-        ``base_addr + patch_offset`` is used.
+        Offset from ``fv`` to jump back after executing the patch.
 
     Returns
     -------
@@ -147,10 +135,9 @@ def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100
         Pairs of (address, value) ready for insertion into a ``.cht`` file.
     """
 
-    fv = patch_addr if patch_addr is not None else base_addr + patch_offset
-    ret = return_addr if return_addr is not None else fv + return_offset
+    fv = base_addr + patch_offset
+    ret = fv + return_offset
     vals = [
-        orig_inst,                   # original second instruction
         0x8C900018,                  # lw $s0, 0x18($a0)
         0x3C02FF80,                  # lui $v0, 0xFF80
         0x24420FFF,                  # addiu $v0, $v0, 0x0FFF
@@ -254,17 +241,6 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
         dy_patch = None
         if new_dy is not None:
-            clobber_addr = None
-            for seg in elf.iter_segments():
-                if seg['p_type'] != 'PT_LOAD':
-                    continue
-                data, seg_base = seg.data(), seg['p_vaddr']
-                pos = data.find(CLOBBER_STR1)
-                if pos >= 0:
-                    clobber_addr = seg_base + pos
-                    print(f"[INFO] Found clobber string at 0x{clobber_addr:08X}")
-                    break
-
             for seg in elf.iter_segments():
                 if seg['p_type'] != 'PT_LOAD':
                     continue
@@ -272,18 +248,8 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 off = find_pattern(data, SCEGSPUTDISPENV_SIG)
                 if off >= 0:
                     print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
-                    from_off = off - 16
-                    orig_inst = struct.unpack(">I", data[from_off + 4:from_off + 8])[0]
-                    hook_addr = seg_base + from_off + 4
-                    patch_addr = clobber_addr if clobber_addr else seg_base + 0x100
-                    j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
-                    hook_patch = [
-                        ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)
-                    ]
-                    ret_addr = seg_base + from_off + 12
-                    dy_vals = generate_putdispenv_patch(new_dy, seg_base, orig_inst,
-                                                     return_addr=ret_addr, patch_addr=patch_addr)
-                    dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
+                    dy_vals = generate_putdispenv_patch(new_dy, seg_base)
+                    dy_patch = (f"//Vertical Offset DY={new_dy}", dy_vals)
                     break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
