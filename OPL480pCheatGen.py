@@ -2,7 +2,7 @@
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import json
-import sys, os, argparse, tempfile, re
+import sys, os, argparse, tempfile, re, struct
 from elftools.elf.elffile import ELFFile
 from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS32, CS_MODE_BIG_ENDIAN
 
@@ -115,7 +115,7 @@ def analyze_display(insns, interlace_patch=True):
                     d2.append((code, 0x00000000))
     return mode, d2
 
-def generate_putdispenv_patch(dy_value, base_addr, patch_offset=0x100, return_offset=12, return_addr=None):
+def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100, return_offset=12, return_addr=None):
     """Return cheat codes to override DY via sceGsPutDispEnv.
 
     Parameters
@@ -129,6 +129,9 @@ def generate_putdispenv_patch(dy_value, base_addr, patch_offset=0x100, return_of
     return_offset : int, optional
         Offset from ``fv`` to jump back after executing the patch when
         ``return_addr`` is not specified.
+    orig_inst : int
+        Instruction originally located at ``base_addr + 4`` that will be
+        executed at the start of the patch.
     return_addr : int, optional
         Absolute address to return to after executing the patch.
 
@@ -141,6 +144,7 @@ def generate_putdispenv_patch(dy_value, base_addr, patch_offset=0x100, return_of
     fv = base_addr + patch_offset
     ret = return_addr if return_addr is not None else fv + return_offset
     vals = [
+        orig_inst,                   # original second instruction
         0x8C900018,                  # lw $s0, 0x18($a0)
         0x3C02FF80,                  # lui $v0, 0xFF80
         0x24420FFF,                  # addiu $v0, $v0, 0x0FFF
@@ -251,15 +255,16 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 off = find_pattern(data, SCEGSPUTDISPENV_SIG)
                 if off >= 0:
                     print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
-                    hook_addr = seg_base + off - 16 + 4
+                    from_off = off - 16
+                    orig_inst = struct.unpack(">I", data[from_off + 4:from_off + 8])[0]
+                    hook_addr = seg_base + from_off + 4
                     hook_target = seg_base + 0x100
                     j_code = 0x08000000 | ((hook_target // 4) & 0x03FFFFFF)
                     hook_patch = [
-                        ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code),
-                        ((0x20 << 24) | ((hook_addr + 4) & 0x00FFFFFF), 0x00000000)
+                        ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)
                     ]
-                    ret_addr = seg_base + off - 16 + 12
-                    dy_vals = generate_putdispenv_patch(new_dy, seg_base, return_addr=ret_addr)
+                    ret_addr = seg_base + from_off + 12
+                    dy_vals = generate_putdispenv_patch(new_dy, seg_base, orig_inst, return_addr=ret_addr)
                     dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
                     break
 
