@@ -26,14 +26,6 @@ SCEGSPUTDISPENV_SIG = bytes([
     0x2D,0x80,0x80,0x00,0x06,0x00,0x43,0x84,
     0x01,0x00,0x02,0x24,0x11,0x00,0x62,0x14
 ])
-
-# Strings used as scratch space for the DY hook patch
-CLOBBER_STR1 = (
-    b"sceGsExecStoreImage: Enough data does not reach VIF1"
-)
-CLOBBER_STR2 = (
-    b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
-)
 DISPLAY1_ADDR = 0x12000000
 DISPLAY2_ADDR = 0x120000A0
 
@@ -256,45 +248,25 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
         dy_patch = None
         if new_dy is not None:
-            clob_seg = None
-            clob_off = None
             for seg in elf.iter_segments():
                 if seg['p_type'] != 'PT_LOAD':
                     continue
-                data = seg.data()
-                idx = data.find(CLOBBER_STR1)
-                if idx >= 0:
-                    clob_seg = seg
-                    clob_off = idx
+                data, seg_base = seg.data(), seg['p_vaddr']
+                off = find_pattern(data, SCEGSPUTDISPENV_SIG)
+                if off >= 0:
+                    print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
+                    from_off = off - 16
+                    orig_inst = struct.unpack(">I", data[from_off + 4:from_off + 8])[0]
+                    hook_addr = seg_base + from_off + 4
+                    patch_addr = seg_base + 0x100
+                    j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
+                    hook_patch = [
+                        ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)
+                    ]
+                    ret_addr = seg_base + from_off + 12
+                    dy_vals = generate_putdispenv_patch(new_dy, seg_base, orig_inst, return_addr=ret_addr)
+                    dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
                     break
-            if clob_seg is None:
-                print("[WARN] DY patch: clobber string not found; skipping DY override.")
-            else:
-                for seg in elf.iter_segments():
-                    if seg['p_type'] != 'PT_LOAD':
-                        continue
-                    data, seg_base = seg.data(), seg['p_vaddr']
-                    off = find_pattern(data, SCEGSPUTDISPENV_SIG)
-                    if off >= 0:
-                        print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
-                        from_off = off - 16
-                        orig_inst = struct.unpack(">I", data[from_off + 4:from_off + 8])[0]
-                        hook_addr = seg_base + from_off + 4
-                        patch_addr = clob_seg['p_vaddr'] + clob_off
-                        j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
-                        hook_patch = [
-                            ((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)
-                        ]
-                        ret_addr = seg_base + from_off + 12
-                        dy_vals = generate_putdispenv_patch(
-                            new_dy,
-                            clob_seg['p_vaddr'],
-                            orig_inst,
-                            patch_offset=clob_off,
-                            return_addr=ret_addr,
-                        )
-                        dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
-                        break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
