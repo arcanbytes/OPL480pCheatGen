@@ -436,6 +436,9 @@ if __name__ == '__main__':
         p.print_help()
         sys.exit(0)  
     args = p.parse_args()
+    if args.dy is not None and not (-100 <= args.dy <= 100):
+        print("Error: --dy must be between -100 and 100.")
+        sys.exit(1)    
     print(f"[INFO] OPL480pCheatGen starting on {args.input}")
 
     if args.input.lower().endswith('.iso'):
