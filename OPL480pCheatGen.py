@@ -205,7 +205,7 @@ def generate_display_patch(orig_insn, reg, patch_addr, ret_addr):
     ]
     return [((0x20 << 24) | ((patch_addr + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
 
-def find_sd(insns):
+def find_sd(insns, include_all=False):
     """Locate DISPLAY register writes in a stream of instructions.
 
     The original implementation only handled ``addiu`` sequences. Some games
@@ -240,20 +240,25 @@ def find_sd(insns):
                     regs[ins.operands[0].reg] = (regs[rs] + regs[rt]) & 0xFFFFFFFF
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
-            if m.type == MIPS_OP_MEM and prev:
+            if m.type == MIPS_OP_MEM:
                 base = m.mem.base
                 disp = m.mem.disp
                 if base in regs:
                     addr = (regs[base] + disp) & 0xFFFFFFFF
                     if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
-                        matches.append((ins.address, ins.bytes, ins.operands[0].reg,
-                                        prev.address, prev.bytes, prev))
+                        if prev is not None:
+                            matches.append((ins.address, ins.bytes, ins.operands[0].reg,
+                                            prev.address, prev.bytes, prev))
+                        elif include_all:
+                            matches.append((ins.address, ins.bytes, ins.operands[0].reg,
+                                            None, None, None))
         prev = ins
     return matches
 
 # Main extraction & patch logic
 def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True,
                     force_240p=False, pal60=False, new_dy=None, aggressive=False,
+                    debug_aggr=False, force_aggr_skip=False,
                     inject_hook=None, inject_handler=None):
     fname = os.path.basename(elf_path)
     if base_override:
@@ -343,8 +348,14 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             if m and not default_mode:
                 default_mode = m
             all_d2 += d2
-            if aggressive:
-                aggr_hits.extend(find_sd(insns))
+            if aggressive or debug_aggr:
+                aggr_hits.extend(find_sd(insns, include_all=debug_aggr))
+
+        if debug_aggr:
+            print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
+            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
+                prev_name = prev_ins.mnemonic if prev_ins else 'None'
+                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev: {prev_name}")
 
         dy_patch = None
         if new_dy is not None:
@@ -397,6 +408,8 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             offset = 0
             for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
                 if prev_addr is None:
+                    if debug_aggr:
+                        print(f"[WARN] No preceding instruction for sd at {addr:08X}")
                     continue
                 skip = False
                 ret_addr = addr + 8
@@ -413,7 +426,10 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
                     skip = True
                 if skip:
-                    continue
+                    if debug_aggr:
+                        print(f"[WARN] Skipping complex branch at {prev_addr:08X}")
+                    if not force_aggr_skip:
+                        continue
                 patch_addr = patch_base + offset
                 j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                 patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
@@ -609,6 +625,10 @@ if __name__ == '__main__':
     p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
     p.add_argument('--aggressive', dest='aggressive', action='store_true',
                    help='Aggressively patch DISPLAY writes')
+    p.add_argument('--debug-aggr', dest='debug_aggr', action='store_true',
+                   help='Print potential DISPLAY writes for analysis')
+    p.add_argument('--force-aggr-skipcheck', dest='force_aggr_skip', action='store_true',
+                   help='Override safety checks during aggressive patching')
     p.add_argument('--inject-hook', dest='inject_hook', type=lambda x: int(x, 16),
                    help='Manual hook address for aggressive patch')
     p.add_argument('--inject-handler', dest='inject_handler', type=lambda x: int(x, 16),
@@ -633,6 +653,8 @@ if __name__ == '__main__':
             pal60=args.pal60,
             new_dy=args.dy,
             aggressive=args.aggressive,
+            debug_aggr=args.debug_aggr,
+            force_aggr_skip=args.force_aggr_skip,
             inject_hook=args.inject_hook,
             inject_handler=args.inject_handler,
         )
@@ -649,6 +671,8 @@ if __name__ == '__main__':
             pal60=args.pal60,
             new_dy=args.dy,
             aggressive=args.aggressive,
+            debug_aggr=args.debug_aggr,
+            force_aggr_skip=args.force_aggr_skip,
             inject_hook=args.inject_hook,
             inject_handler=args.inject_handler,
         )
