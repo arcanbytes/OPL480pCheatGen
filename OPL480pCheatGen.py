@@ -206,6 +206,17 @@ def generate_display_patch(orig_insn, reg, patch_addr, ret_addr):
     return [((0x20 << 24) | ((patch_addr + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
 
 def find_sd(insns):
+    """Locate DISPLAY register writes in a stream of instructions.
+
+    The original implementation only handled ``addiu`` sequences. Some games
+    build the DISPLAY address using ``daddiu`` in 64-bit code, so this function
+    also recognises that pattern. The ``regs`` dictionary is updated whenever a
+    register is loaded with an immediate using ``lui``/``ori`` or when an offset
+    is added via ``addiu``/``daddiu``. If a subsequent ``sd`` stores to
+    ``DISPLAY1`` or ``DISPLAY2`` using a tracked base register, the instruction
+    and its predecessor are returned so that a jump hook can be inserted.
+    """
+
     matches = []
     regs = {}
     prev = None
@@ -214,7 +225,7 @@ def find_sd(insns):
             regs[ins.operands[0].reg] = ins.operands[1].imm << 16
         elif ins.mnemonic == 'ori' and ins.operands[1].reg in regs:
             regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
-        elif ins.mnemonic == 'addiu' and ins.operands[1].reg in regs:
+        elif ins.mnemonic in ('addiu', 'daddiu') and ins.operands[1].reg in regs:
             regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
@@ -230,7 +241,9 @@ def find_sd(insns):
     return matches
 
 # Main extraction & patch logic
-def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True, force_240p=False, pal60=False, new_dy=None, aggressive=False):
+def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True,
+                    force_240p=False, pal60=False, new_dy=None, aggressive=False,
+                    inject_hook=None, inject_handler=None):
     fname = os.path.basename(elf_path)
     if base_override:
         base = base_override
@@ -399,6 +412,27 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 offset += 7 * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
 
+        # Manual injection override
+        manual_patch = None
+        if inject_hook and inject_handler:
+            print("[INFO] Injecting fixed aggressive patch manually.")
+            vals = [
+                0x3C020010, 0x344226DC, 0x8C820000, 0x38420001, 0xAC820000,
+                0x3C021700, 0x3442FFFC, 0x3C030000, 0x3463000F, 0xAC430038,
+                0x0800E003, 0x00000000
+            ]
+            manual_lines = [
+                ((0x20 << 24) | ((inject_handler + i * 4) & 0x00FFFFFF), v)
+                for i, v in enumerate(vals)
+            ]
+            manual_lines.append(
+                ((0x20 << 24) | (inject_hook & 0x00FFFFFF), 0x08000000 | (inject_handler // 4))
+            )
+            manual_lines.append(
+                ((0x20 << 24) | ((inject_hook + 4) & 0x00FFFFFF), 0x00000000)
+            )
+            manual_patch = ("//Aggressive DISPLAY patch", manual_lines)
+
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
         w0, h0, i0 = default_mode
@@ -417,7 +451,9 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
     if dy_patch:
         cheats.append(dy_patch)
-    if aggr_patch:
+    if manual_patch:
+        cheats.append(manual_patch)
+    elif aggr_patch:
         cheats.append(aggr_patch)
 
     # No-interlace patch
@@ -562,6 +598,10 @@ if __name__ == '__main__':
     p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
     p.add_argument('--aggressive', dest='aggressive', action='store_true',
                    help='Aggressively patch DISPLAY writes')
+    p.add_argument('--inject-hook', dest='inject_hook', type=lambda x: int(x, 16),
+                   help='Manual hook address for aggressive patch')
+    p.add_argument('--inject-handler', dest='inject_handler', type=lambda x: int(x, 16),
+                   help='Manual handler address for aggressive patch')
     if len(sys.argv) == 1:
         p.print_help()
         sys.exit(0)  
@@ -581,7 +621,9 @@ if __name__ == '__main__':
             force_240p=args.force_240p,
             pal60=args.pal60,
             new_dy=args.dy,
-            aggressive=args.aggressive
+            aggressive=args.aggressive,
+            inject_hook=args.inject_hook,
+            inject_handler=args.inject_handler,
         )
         if args.preview_only:
             print(format_cht_text(cheats))
@@ -595,7 +637,9 @@ if __name__ == '__main__':
             force_240p=args.force_240p,
             pal60=args.pal60,
             new_dy=args.dy,
-            aggressive=args.aggressive
+            aggressive=args.aggressive,
+            inject_hook=args.inject_hook,
+            inject_handler=args.inject_handler,
         )
         if args.preview_only:
             print(format_cht_text(cheats))
