@@ -25,6 +25,7 @@ You can always get the latest compiled version here:
 - ✅ **Auto-detect ELF from ISO** via `SYSTEM.CNF` (no user input needed)
 - ✅ **Optional Patches**:
   - Enable PAL 60Hz (for PAL-region games)
+  - Skip PAL 60Hz patch if a 60 Hz mode already exists
   - Force 240p output
   - Adjust vertical offset (DY) 
 - ✅ **Fully Offline**: Loads titles and mastercodes from a built-in database (5300+ entries)

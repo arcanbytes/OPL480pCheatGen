@@ -30,6 +30,15 @@ CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
 CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
 DISPLAY1_ADDR = 0x12000000
 DISPLAY2_ADDR = 0x120000A0
+ELF_MODE_PATTERNS = [
+    b'480p',
+    b'240p',
+    b'progressive',
+    b'interlaced',
+    b'60HZ',
+    b'PAL60',
+    b'60 HZ',
+]
 
 def extract_boot_id_from_iso(iso_path):
     if not pycdlib:
@@ -82,7 +91,8 @@ def fetch_mastercode(base):
     return None, None
 
 # Parse ELF for strings
-def parse_elf_strings(path, patterns):
+def parse_elf_strings(path, patterns=ELF_MODE_PATTERNS):
+    """Return list of supported video mode strings found in the ELF."""
     found = set()
     try:
         data = open(path, 'rb').read()
@@ -203,9 +213,10 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
     print(f"\n=== {base} Cheater Summary ===")
     print(f"Title: {title}")
     print(f"Mastercode: {mc}")
-    modes = parse_elf_strings(elf_path, [b'480p', b'240p', b'progressive', b'interlaced'])
+    modes = parse_elf_strings(elf_path)
     if modes:
         print(f"Supported modes in ELF: {', '.join(modes)}")
+    has_60hz = any(m.lower() in ('60hz', 'pal60', '60 hz') for m in modes)
     prefix = base.split('_')[0]
     region = 'PAL' if prefix in ('SLES','SCES') else 'NTSC'
     print(f"Region: {region}")
@@ -314,29 +325,32 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
     # PAL<->NTSC switch patch via flag
     if region == 'PAL' and reset and pal60:
-        pal_val = params.get(12)
-        if pal_val is not None:
-            ntsc_val = (pal_val & 0xFFFFFF00) | 0x60
-            addr_to_patch = (0x20 << 24) | ((reset + 12*4) & 0x00FFFFFF)
-
-            # Search for existing patch modifying this address
-            patched = False
-            for i in range(1, len(cheats)):
-                patch_lines = cheats[i][1]
-                for j, (a, v) in enumerate(patch_lines):
-                    if a == addr_to_patch:
-                        patch_lines[j] = (a, ntsc_val)
-                        patched = True
-                        print(f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}")
-                        break
-                if patched:
-                    break
-
-            if not patched:
-                cheats.append(("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)]))
-                print(f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}")
+        if has_60hz:
+            print("[INFO] Skipping PAL60 patch (mode already present)")
         else:
-            print("[WARN] Original PAL refresh constant not found; skipping region switch.")
+            pal_val = params.get(12)
+            if pal_val is not None:
+                ntsc_val = (pal_val & 0xFFFFFF00) | 0x60
+                addr_to_patch = (0x20 << 24) | ((reset + 12*4) & 0x00FFFFFF)
+
+                # Search for existing patch modifying this address
+                patched = False
+                for i in range(1, len(cheats)):
+                    patch_lines = cheats[i][1]
+                    for j, (a, v) in enumerate(patch_lines):
+                        if a == addr_to_patch:
+                            patch_lines[j] = (a, ntsc_val)
+                            patched = True
+                            print(f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}")
+                            break
+                    if patched:
+                        break
+
+                if not patched:
+                    cheats.append(("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)]))
+                    print(f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}")
+            else:
+                print("[WARN] Original PAL refresh constant not found; skipping region switch.")
     elif region == 'PAL':
         print("[INFO] Skipping PAL<->NTSC switch.")
 
