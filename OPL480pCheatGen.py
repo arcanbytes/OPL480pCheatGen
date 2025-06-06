@@ -208,6 +208,7 @@ def generate_display_patch(orig_insn, reg, patch_addr, ret_addr):
 def find_sd(insns):
     matches = []
     regs = {}
+    prev = None
     for ins in insns:
         if ins.mnemonic == 'lui':
             regs[ins.operands[0].reg] = ins.operands[1].imm << 16
@@ -217,10 +218,12 @@ def find_sd(insns):
             regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
-            if m.type == MIPS_OP_MEM and m.base in regs:
+            if m.type == MIPS_OP_MEM and m.base in regs and prev:
                 addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
                 if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
-                    matches.append((ins.address, ins.bytes, ins.operands[0].reg))
+                    matches.append((ins.address, ins.bytes, ins.operands[0].reg,
+                                    prev.address, prev.bytes, prev))
+        prev = ins
     return matches
 
 # Main extraction & patch logic
@@ -365,13 +368,31 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             patch_base = clobber2 if clobber2 is not None else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
             patch_lines = []
             offset = 0
-            for addr, b, reg in aggr_hits:
+            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
+                if prev_addr is None:
+                    continue
+                skip = False
+                ret_addr = addr + 8
+                delay_opcode = struct.unpack('>I', prev_bytes)[0]
+                if prev_ins.mnemonic == 'beq' and len(prev_ins.operands) == 3:
+                    if prev_ins.operands[0].reg == 0 and prev_ins.operands[1].reg == 0:
+                        off = prev_ins.operands[2].imm
+                        if off & 0x8000:
+                            off |= -0x10000
+                        ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
+                        delay_opcode = 0
+                    else:
+                        skip = True
+                elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
+                    skip = True
+                if skip:
+                    continue
                 patch_addr = patch_base + offset
                 j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
-                patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), j_code))
-                patch_lines.append(((0x20 << 24) | ((addr + 4) & 0x00FFFFFF), 0x00000000))
+                patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
+                patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
                 orig = struct.unpack('>I', b)[0]
-                patch_lines.extend(generate_display_patch(orig, reg, patch_addr, addr + 8))
+                patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
                 offset += 7 * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
 
