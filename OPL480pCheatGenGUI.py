@@ -116,8 +116,17 @@ class OPLCheatGUI:
             cmd.extend(["--dy", str(self.dy_value.get())])
         
         def run_patch():
-            try:
-                output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+            try:                
+                startupinfo = None
+                # This setting is specific to Windows to suppress the CMD window.
+                # It only applies if we are running the compiled .exe.
+                if getattr(sys, 'frozen', False) and os.name == 'nt':
+                    startupinfo = subprocess.STARTUPINFO()
+                    # Show hidden window (SW_HIDE)
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
+
+                output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True, startupinfo=startupinfo)
 
                 # Extract the expected .cht filename from the log
                 for line in output.splitlines():
@@ -129,7 +138,20 @@ class OPLCheatGUI:
                 self.root.after(0, lambda: self.show_output(output))
                 self.root.after(0, lambda: self.show_cht_preview(cht_content))
             except subprocess.CalledProcessError as e:
-                self.root.after(0, self.show_output, f"[ERROR]\n{e.output}")
+                # Handles errors if the CLI returns an error code
+                error_output = f"[ERROR] CLI tool returned an error (code: {e.returncode}):\n{e.output}"
+                self.root.after(0, self.show_output, error_output)
+                self.root.after(0, lambda: messagebox.showerror("CLI Error", f"There was an error running the CLI tool:\n{e.output.strip()}"))
+            except FileNotFoundError:
+                # Handles the case where the CLI executable is missing
+                error_msg = f"[ERROR] Executable not found {script_or_exe}. Make sure it is in the same directory as the GUI or in your PATH."
+                self.root.after(0, self.show_output, error_msg)
+                self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
+            except Exception as e:
+                # Unexpected Errors
+                error_msg = f"[ERROR] Unexpected error occurred while running the CLI: {e}"
+                self.root.after(0, self.show_output, error_msg)
+                self.root.after(0, lambda: messagebox.showerror("Unexpected Error", error_msg))
 
         threading.Thread(target=run_patch, daemon=True).start()      
 

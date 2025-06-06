@@ -3,7 +3,7 @@
 ![Banner](img/OPL480pCheatGen_banner.png)
 
 
-**OPL480pCheatGen** is a tool for generating `.cht` cheat files compatible with [Open PS2 Loader (OPL)](https://github.com/ifcaro/Open-PS2-Loader), allowing you to force 480p, 240p, and progressive video modes in your PlayStation 2 games **without modifying ISOs**.
+**OPL480pCheatGen** is a tool for generating `.cht` cheat files compatible with [Open PS2 Loader (OPL)](https://github.com/ifcaro/Open-PS2-Loader), allowing you to force progressive video modes, 480p or 240p, in your PlayStation 2 games **without modifying ISOs**.
 
 > ✅ No patching required  
 > ✅ Runs offline  
@@ -21,13 +21,14 @@ You can always get the latest compiled version here:
 
 ## ⚙️ Features
 
-- ✅ **Video Mode Detection**: 480p, 240p, and 480i
-- ✅ **Auto-detect ELF from ISO** via `SYSTEM.CNF` (no user input needed)
+- ✅ **Force 480p output**
 - ✅ **Optional Patches**:
-  - Enable PAL 60Hz (for PAL-region games)
-  - Skip PAL 60Hz patch if a 60 Hz mode already exists
   - Force 240p output
-  - Adjust vertical offset (DY) 
+  - Enable PAL 60Hz (for PAL-region games; auto-skips if 60Hz is already present)
+  - Adjust vertical offset (DY)
+   
+- ✅ **Auto-detect ELF from ISO** via `SYSTEM.CNF` (no user input needed)
+- ✅ **Video Mode Detection**: 480p, 240p, and 480i
 - ✅ **Fully Offline**: Loads titles and mastercodes from a built-in database (5300+ entries)
 - ✅ **Supports GUI and CLI**
 
@@ -60,7 +61,7 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
 
 # Optional flags:
 --preview-only        # Show .cht content in console, do not write file
---pal60               # Enable PAL 60Hz mode (for PAL games)
+--pal60               # Enable PAL 60Hz mode (auto-skipped if already supported)
 --force-240p          # Use 240p instead of 480p
 --dy 51               # Override vertical offset (DY)
 --mastercode "CODE"   # Manually override mastercode

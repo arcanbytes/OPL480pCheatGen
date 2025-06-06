@@ -358,9 +358,19 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
     return cheats, base, title
 
 # Write cheat file
-def write_cht(output_dir, cheats, game_id, title):
+def write_cht(output_dir, cheats, game_id, title): 
     out_name = f"{game_id}.cht"
-    out_path = os.path.join(output_dir, out_name)
+
+    # Determinar el directorio de salida real
+    if getattr(sys, 'frozen', False):
+        # Estamos en un ejecutable de PyInstaller, el directorio es el del ejecutable
+        actual_output_dir = os.path.dirname(sys.executable)
+    else:
+        # Estamos ejecutando el script .py, el directorio es el del script
+        actual_output_dir = os.path.join(output_dir)       
+ 
+    out_path = os.path.join(actual_output_dir, out_name)
+
     print(f"\nGenerating {out_path}...")
     print(f"[INFO] Output filename: {out_name}")
     with open(out_path,'w',encoding='utf-8') as c:

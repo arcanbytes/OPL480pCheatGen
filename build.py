@@ -11,7 +11,7 @@ def clean():
         if file.endswith(".spec"):
             os.remove(file)
 
-def build_exe(entry_script, name, data_files=[], icon=None):
+def build_exe(entry_script, name, data_files=[], icon=None, is_gui=False):
     args = [
         entry_script,
         '--onefile',
@@ -19,6 +19,10 @@ def build_exe(entry_script, name, data_files=[], icon=None):
         '--noconfirm',
         '--clean',
     ]
+
+    if is_gui: # Si es una aplicación GUI, añade --noconsole
+        args.append('--noconsole') # O '--windowed'
+
     for data in data_files:
         args += ['--add-data', f'{data};.']
     if icon:
@@ -40,13 +44,14 @@ if __name__ == "__main__":
     clean()
 
     print("[INFO] Building CLI version...")
-    build_exe('OPL480pCheatGen.py', 'OPL480pCheatGen', [])
+    build_exe('OPL480pCheatGen.py', 'OPL480pCheatGen', [], is_gui=False)
     shutil.copy2('mastercodes.json', 'dist/mastercodes.json')
 
     print("[INFO] Building GUI version...")
-    build_exe('OPL480pCheatGenGUI.py', 'OPL480pCheatGenGUI', [], icon='img/OPL480pCheatGen.ico')
+    build_exe('OPL480pCheatGenGUI.py', 'OPL480pCheatGenGUI', [], icon='img/OPL480pCheatGen.ico', is_gui=True)
 
     print("[INFO] Packaging release...")
     package_release()
 
     print("[DONE] Release zip created in ./release: OPL480pCheatGen_v1.1.0.zip")
+    clean()
