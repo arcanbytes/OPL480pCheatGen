@@ -218,11 +218,14 @@ def find_sd(insns):
             regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
-            if m.type == MIPS_OP_MEM and m.base in regs and prev:
-                addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
-                if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
-                    matches.append((ins.address, ins.bytes, ins.operands[0].reg,
-                                    prev.address, prev.bytes, prev))
+            if m.type == MIPS_OP_MEM and prev:
+                base = m.mem.base
+                disp = m.mem.disp
+                if base in regs:
+                    addr = (regs[base] + disp) & 0xFFFFFFFF
+                    if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
+                        matches.append((ins.address, ins.bytes, ins.operands[0].reg,
+                                        prev.address, prev.bytes, prev))
         prev = ins
     return matches
 
