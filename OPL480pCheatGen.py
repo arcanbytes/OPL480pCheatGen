@@ -28,7 +28,7 @@ SCEGSPUTDISPENV_SIG = bytes([
 ])
 CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
 CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
-DISPLAY1_ADDR = 0x12000000
+DISPLAY1_ADDR = 0x12000080
 DISPLAY2_ADDR = 0x120000A0
 ELF_MODE_PATTERNS = [
     b'480p',
@@ -173,8 +173,57 @@ def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100
     ]
     return [((0x20 << 24) | ((fv + i * 4) & 0x00FFFFFF), val) for i, val in enumerate(vals)]
 
+# Aggressive progressive patch helpers
+def _r(funct, rs, rt, rd, sa=0):
+    return (rs << 21) | (rt << 16) | (rd << 11) | (sa << 6) | funct
+
+def _or(rd, rs, rt):
+    return _r(0x25, rs, rt, rd)
+
+def _addu(rd, rs, rt):
+    return _r(0x21, rs, rt, rd)
+
+def _lui(rt, imm):
+    return (0x0F << 26) | (rt << 16) | (imm & 0xFFFF)
+
+def _j(addr):
+    return (0x02 << 26) | ((addr // 4) & 0x03FFFFFF)
+
+def generate_display_patch(orig_insn, reg, patch_addr, ret_addr):
+    """Build instructions that modify DISPLAY writes."""
+    t0 = 8  # $t0 scratch
+    at = 1
+    vals = [
+        _or(t0, reg, 0),             # or $t0, reg, $zero (save)
+        _lui(at, 1),                 # lui $at, 0x0001
+        _addu(reg, reg, at),         # addu reg, reg, $at
+        orig_insn,                   # original sd instruction
+        _or(reg, t0, 0),             # restore reg
+        _j(ret_addr),                # jump back
+        0x00000000                   # nop
+    ]
+    return [((0x20 << 24) | ((patch_addr + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
+
+def find_sd(insns):
+    matches = []
+    regs = {}
+    for ins in insns:
+        if ins.mnemonic == 'lui':
+            regs[ins.operands[0].reg] = ins.operands[1].imm << 16
+        elif ins.mnemonic == 'ori' and ins.operands[1].reg in regs:
+            regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
+        elif ins.mnemonic == 'addiu' and ins.operands[1].reg in regs:
+            regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
+        elif ins.mnemonic == 'sd':
+            m = ins.operands[1]
+            if m.type == 1 and m.base in regs:
+                addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
+                if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
+                    matches.append((ins.address, ins.bytes, ins.operands[0].reg))
+    return matches
+
 # Main extraction & patch logic
-def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True, force_240p=False, pal60=False, new_dy=None):
+def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True, force_240p=False, pal60=False, new_dy=None, aggressive=False):
     fname = os.path.basename(elf_path)
     if base_override:
         base = base_override
@@ -241,6 +290,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
     reset = None
     default_mode = None
     all_d2 = []
+    aggr_hits = []
     
     if not os.path.isfile(elf_path):
         sys.exit(f"Error: File not found: {elf_path}")
@@ -262,6 +312,8 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             if m and not default_mode:
                 default_mode = m
             all_d2 += d2
+            if aggressive:
+                aggr_hits.extend(find_sd(insns))
 
         dy_patch = None
         if new_dy is not None:
@@ -297,6 +349,30 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
                     break
 
+        aggr_patch = None
+        if aggressive and aggr_hits:
+            clobber2 = None
+            for seg in elf.iter_segments():
+                if seg['p_type'] != 'PT_LOAD':
+                    continue
+                data, seg_base = seg.data(), seg['p_vaddr']
+                pos = data.find(CLOBBER_STR2)
+                if pos >= 0:
+                    clobber2 = seg_base + pos
+                    print(f"[INFO] Found clobber string #2 at 0x{clobber2:08X}")
+                    break
+            patch_base = clobber2 if clobber2 is not None else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
+            patch_lines = []
+            offset = 0
+            for addr, b, reg in aggr_hits:
+                patch_addr = patch_base + offset
+                j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
+                patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), j_code))
+                orig = struct.unpack('>I', b)[0]
+                patch_lines.extend(generate_display_patch(orig, reg, patch_addr, addr + 8))
+                offset += 7 * 4
+            aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
+
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
         w0, h0, i0 = default_mode
@@ -315,6 +391,8 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
     if dy_patch:
         cheats.append(dy_patch)
+    if aggr_patch:
+        cheats.append(aggr_patch)
 
     # No-interlace patch
     if all_d2:
@@ -456,6 +534,8 @@ if __name__ == '__main__':
     p.add_argument('--pal60', dest='pal60', action='store_true',
                    help='Enable PAL 60Hz patch for PAL region games')
     p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
+    p.add_argument('--aggressive', dest='aggressive', action='store_true',
+                   help='Aggressively patch DISPLAY writes')
     if len(sys.argv) == 1:
         p.print_help()
         sys.exit(0)  
@@ -474,7 +554,8 @@ if __name__ == '__main__':
             interlace_patch=args.interlace_patch,
             force_240p=args.force_240p,
             pal60=args.pal60,
-            new_dy=args.dy
+            new_dy=args.dy,
+            aggressive=args.aggressive
         )
         if args.preview_only:
             print(format_cht_text(cheats))
@@ -487,7 +568,8 @@ if __name__ == '__main__':
             interlace_patch=args.interlace_patch,
             force_240p=args.force_240p,
             pal60=args.pal60,
-            new_dy=args.dy
+            new_dy=args.dy,
+            aggressive=args.aggressive
         )
         if args.preview_only:
             print(format_cht_text(cheats))
