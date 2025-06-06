@@ -212,13 +212,15 @@ def find_sd(insns):
     build the DISPLAY address using ``daddiu`` in 64-bit code, so this function
     also recognises that pattern. The ``regs`` dictionary is updated whenever a
     register is loaded with an immediate using ``lui``/``ori`` or when an offset
-    is added via ``addiu``/``daddiu``. If a subsequent ``sd`` stores to
+    is added via ``addiu``/``daddiu``. Constants are additionally propagated
+    through ``or``, ``addu`` and ``daddu`` so that more complex address
+    construction sequences are understood. If a subsequent ``sd`` stores to
     ``DISPLAY1`` or ``DISPLAY2`` using a tracked base register, the instruction
     and its predecessor are returned so that a jump hook can be inserted.
     """
 
     matches = []
-    regs = {}
+    regs = {0: 0}  # track known register constants, start with $zero
     prev = None
     for ins in insns:
         if ins.mnemonic == 'lui':
@@ -227,6 +229,15 @@ def find_sd(insns):
             regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
         elif ins.mnemonic in ('addiu', 'daddiu') and ins.operands[1].reg in regs:
             regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
+        # propagate constants via ``or``/``addu``/``daddu`` when both operands are known
+        elif ins.mnemonic in ('or', 'addu', 'daddu'):
+            rs = ins.operands[1].reg
+            rt = ins.operands[2].reg
+            if rs in regs and rt in regs:
+                if ins.mnemonic == 'or':
+                    regs[ins.operands[0].reg] = regs[rs] | regs[rt]
+                else:
+                    regs[ins.operands[0].reg] = (regs[rs] + regs[rt]) & 0xFFFFFFFF
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
             if m.type == MIPS_OP_MEM and prev:
