@@ -4,7 +4,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import json
 import sys, os, argparse, tempfile, re, struct
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS32, CS_MODE_BIG_ENDIAN
+from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN
+from capstone.mips import MIPS_OP_MEM
 
 # Optional imports
 try:
@@ -113,7 +114,7 @@ def analyze_display(insns, interlace_patch=True):
             regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
-            if m.type == 1 and m.base in regs:
+            if m.type == MIPS_OP_MEM and m.base in regs:
                 addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
                 if addr == DISPLAY1_ADDR and not mode:
                     val = regs.get(ins.operands[0].reg)
@@ -216,7 +217,7 @@ def find_sd(insns):
             regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
         elif ins.mnemonic == 'sd':
             m = ins.operands[1]
-            if m.type == 1 and m.base in regs:
+            if m.type == MIPS_OP_MEM and m.base in regs:
                 addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
                 if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
                     matches.append((ins.address, ins.bytes, ins.operands[0].reg))
@@ -297,7 +298,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
     with open(elf_path,'rb') as f:
         elf = ELFFile(f)
-        md  = Cs(CS_ARCH_MIPS, CS_MODE_MIPS32 + CS_MODE_BIG_ENDIAN)
+        md  = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + CS_MODE_BIG_ENDIAN)
         md.detail = True
         for seg in elf.iter_segments():
             if seg['p_type'] != 'PT_LOAD': continue
@@ -368,6 +369,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 patch_addr = patch_base + offset
                 j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), j_code))
+                patch_lines.append(((0x20 << 24) | ((addr + 4) & 0x00FFFFFF), 0x00000000))
                 orig = struct.unpack('>I', b)[0]
                 patch_lines.extend(generate_display_patch(orig, reg, patch_addr, addr + 8))
                 offset += 7 * 4
