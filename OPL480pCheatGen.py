@@ -120,8 +120,8 @@ def analyze_display(insns, interlace_patch=False, debug=False):
         if mem_op.type != MIPS_OP_MEM:
             continue
 
-        addr = mem_op.disp
-        base = getattr(mem_op, "base", None)
+        addr = mem_op.mem.disp
+        base = getattr(mem_op.mem, "base", None)
 
         if addr in (0x80, 0xA0) and (base in suspect_bases or base is None):
             matches.append((i, ins))
