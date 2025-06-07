@@ -128,8 +128,8 @@ def analyze_display(insns, interlace_patch=True, debug=False):
         if mem_op.type != MIPS_OP_MEM:
             continue
 
-        disp = mem_op.disp
-        base = getattr(mem_op, "base", None)
+        disp = mem_op.mem.disp
+        base = getattr(mem_op.mem, "base", None)
 
         # Original direct detection using tracked constants
         if base in regs:
