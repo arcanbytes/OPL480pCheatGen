@@ -104,29 +104,61 @@ def parse_elf_strings(path, patterns=ELF_MODE_PATTERNS):
         pass
     return sorted(found)
 
-# Analyze GS DISPLAY writes
-def analyze_display(insns, interlace_patch=True):
+# Analyze GS DISPLAY writes and heuristics
+def analyze_display(insns, interlace_patch=True, debug=False):
+    """Locate writes to DISPLAY registers and gather metadata."""
+
     regs, mode, d2 = {}, None, []
-    for ins in insns:
-        if ins.mnemonic == 'lui':
+    matches = []
+    details = []
+    suspect_bases = {2, 3, 4, 5, 6, 7}  # $v0–$a3
+
+    for i, ins in enumerate(insns):
+        if ins.mnemonic == "lui":
             regs[ins.operands[0].reg] = ins.operands[1].imm << 16
-        elif ins.mnemonic == 'ori' and ins.operands[1].reg in regs:
+            continue
+        if ins.mnemonic == "ori" and ins.operands[1].reg in regs:
             regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
-        elif ins.mnemonic == 'sd':
-            m = ins.operands[1]
-            if m.type == MIPS_OP_MEM and m.base in regs:
-                addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
-                if addr == DISPLAY1_ADDR and not mode:
-                    val = regs.get(ins.operands[0].reg)
-                    if val is not None:
-                        w, h = val & 0x7FF, (val >> 11) & 0x7FF
-                        i = (val >> 22) & 1
-                        mode = (w, h, bool(i))
-                        print(f"[INFO] Found DISPLAY1 write: {w}×{h}, {'interlaced' if i else 'progressive'}")
-                elif addr == DISPLAY2_ADDR and interlace_patch:
-                    code = (0x20 << 24) | (ins.address & 0x00FFFFFF)
-                    d2.append((code, 0x00000000))
-    return mode, d2
+            continue
+
+        if ins.mnemonic != "sd" or not ins.operands:
+            continue
+
+        mem_op = ins.operands[1]
+        if mem_op.type != MIPS_OP_MEM:
+            continue
+
+        disp = mem_op.mem.disp
+        base = getattr(mem_op.mem, "base", None)
+
+        # Original direct detection using tracked constants
+        if base in regs:
+            addr = (regs[base] + disp) & 0xFFFFFFFF
+            if addr == DISPLAY1_ADDR and not mode:
+                val = regs.get(ins.operands[0].reg)
+                if val is not None:
+                    w, h = val & 0x7FF, (val >> 11) & 0x7FF
+                    i = (val >> 22) & 1
+                    mode = (w, h, bool(i))
+                    print(f"[INFO] Found DISPLAY1 write: {w}\u00d7{h}, {'interlaced' if i else 'progressive'}")
+            elif addr == DISPLAY2_ADDR and interlace_patch:
+                code = (0x20 << 24) | (ins.address & 0x00FFFFFF)
+                d2.append((code, 0x00000000))
+
+        # Heuristic detection when base is unknown
+        if disp in (0x80, 0xA0) and (base in suspect_bases or base is None):
+            matches.append((i, ins))
+            if debug:
+                details.append(f"[MATCH] {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> suspect write to DISPLAYx")
+        elif debug:
+            why = []
+            if disp not in (0x80, 0xA0):
+                why.append(f"disp != 0x80/0xA0 (was 0x{disp:X})")
+            if base not in suspect_bases:
+                why.append(f"base={base} not in $v0-$a3")
+            details.append(f"[SKIP]  {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> " + "; ".join(why))
+
+    return mode, d2, matches, details
 
 def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100, return_offset=12, return_addr=None, patch_addr=None):
     """Return cheat codes to override DY via sceGsPutDispEnv.
@@ -344,10 +376,14 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     reset = vaddr + off
                     print(f"[INFO] Detected sceGsResetGraph at 0x{reset:08X}")
             insns = list(md.disasm(data, vaddr))
-            m, d2 = analyze_display(insns, interlace_patch)
-            if m and not default_mode:
-                default_mode = m
+            mode, d2, matches, dbg = analyze_display(insns, interlace_patch, debug_aggr)
+            if mode and not default_mode:
+                default_mode = mode
             all_d2 += d2
+            if debug_aggr:
+                for logline in dbg:
+                    print(logline)
+            print(f"[DEBUG] Aggressive hits: {len(matches)} potential display writes found")
             if aggressive or debug_aggr:
                 aggr_hits.extend(find_sd(insns, include_all=debug_aggr))
 
