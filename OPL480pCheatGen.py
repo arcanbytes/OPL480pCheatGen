@@ -108,7 +108,7 @@ def parse_elf_strings(path, patterns=ELF_MODE_PATTERNS):
 def analyze_display(insns, interlace_patch=True, debug=False):
     """Locate writes to DISPLAY registers and gather metadata."""
 
-    regs, mode, d2 = {}, None, []
+    regs, mode, d2 = {0: 0}, None, []
     matches = []
     details = []
     suspect_bases = {2, 3, 4, 5, 6, 7}  # $v0–$a3
@@ -149,14 +149,18 @@ def analyze_display(insns, interlace_patch=True, debug=False):
         if disp in (0x80, 0xA0) and (base in suspect_bases or base is None):
             matches.append((i, ins))
             if debug:
-                details.append(f"[MATCH] {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> suspect write to DISPLAYx")
+                bname = ins.reg_name(base) if base is not None else 'None'
+                details.append(
+                    f"[MATCH] {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> base={bname} disp=0x{disp:X}")
         elif debug:
             why = []
             if disp not in (0x80, 0xA0):
                 why.append(f"disp != 0x80/0xA0 (was 0x{disp:X})")
             if base not in suspect_bases:
                 why.append(f"base={base} not in $v0-$a3")
-            details.append(f"[SKIP]  {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> " + "; ".join(why))
+            bname = ins.reg_name(base) if base is not None else 'None'
+            details.append(
+                f"[SKIP]  {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> base={bname}; " + "; ".join(why))
 
     return mode, d2, matches, details
 
