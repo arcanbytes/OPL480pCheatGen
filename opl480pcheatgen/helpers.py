@@ -49,14 +49,21 @@ def find_pattern(data: bytes, pat: bytes) -> int:
 
 def fetch_mastercode(base: str) -> Tuple[Optional[str], Optional[str]]:
     """Lookup *base* in ``mastercodes.json`` returning ``(title, code)``."""
+    candidates = []
     if getattr(sys, 'frozen', False):
-        app_dir = os.path.dirname(sys.executable)
+        # When packaged with PyInstaller, the data may reside in the
+        # temporary extraction folder (``sys._MEIPASS``) or alongside the
+        # executable depending on the build settings.
+        candidates.append(os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(sys.executable)), 'mastercodes.json'))
+        candidates.append(os.path.join(os.path.dirname(sys.executable), 'mastercodes.json'))
     else:
-        app_dir = os.path.dirname(__file__)
-    db_path = os.path.join(app_dir, "../mastercodes.json")
-    if not os.path.exists(db_path):
+        candidates.append(os.path.join(os.path.dirname(__file__), '../mastercodes.json'))
+
+    db_path = next((p for p in candidates if os.path.exists(p)), None)
+    if not db_path:
         print("[WARN] Local mastercode database not found.")
         return None, None
+
     with open(db_path, 'r', encoding='utf-8') as f:
         db = json.load(f)
     entry = db.get(base)
