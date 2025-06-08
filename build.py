@@ -47,16 +47,15 @@ if __name__ == "__main__":
     build_exe(
         'OPL480pCheatGen.py',
         'OPL480pCheatGen',
-        ['mastercodes.json'],
+        ['opl480pcheatgen/mastercodes.json'],
         is_gui=False,
     )
-    shutil.copy2('mastercodes.json', 'dist/mastercodes.json')
+    shutil.copy2('opl480pcheatgen/mastercodes.json', 'dist/mastercodes.json')
 
     print("[INFO] Building GUI version...")
     build_exe(
         'OPL480pCheatGenGUI.py',
         'OPL480pCheatGenGUI',
-        ['mastercodes.json'],
         icon='img/OPL480pCheatGen.ico',
         is_gui=True,
     )

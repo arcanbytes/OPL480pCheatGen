@@ -6,3 +6,4 @@ OPL480pCheatGenGUI.spec
 OPL480pCheatGen.spec
 OPL480pCheatGen.code-workspace
 OPL480pCheatGen.bat
+/opl480pcheatgen/__pycache__

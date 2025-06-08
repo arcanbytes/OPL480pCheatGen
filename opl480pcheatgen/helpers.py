@@ -48,28 +48,41 @@ def find_pattern(data: bytes, pat: bytes) -> int:
 
 
 def fetch_mastercode(base: str) -> Tuple[Optional[str], Optional[str]]:
-    """Lookup *base* in ``mastercodes.json`` returning ``(title, code)``."""
-    candidates = []
-    if getattr(sys, 'frozen', False):
-        # When packaged with PyInstaller, the data may reside in the
-        # temporary extraction folder (``sys._MEIPASS``) or alongside the
-        # executable depending on the build settings.
-        candidates.append(os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(sys.executable)), 'mastercodes.json'))
-        candidates.append(os.path.join(os.path.dirname(sys.executable), 'mastercodes.json'))
-    else:
-        candidates.append(os.path.join(os.path.dirname(__file__), '../mastercodes.json'))
+    db_path = None
+    
+    # 1. Definir la ruta del archivo externo (next to the .exe or .py script)
+    # Si es un ejecutable, usamos os.path.dirname(sys.executable)
+    # Si es un script .py, usamos os.path.dirname(os.path.abspath(__file__))
+    current_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    external_db_path = os.path.join(current_dir, 'mastercodes.json')
 
-    db_path = next((p for p in candidates if os.path.exists(p)), None)
+    # 2. Priorizar el archivo externo si existe
+    if os.path.exists(external_db_path):
+        db_path = external_db_path
+    
+    # 3. Si no es un archivo externo Y estamos en un ejecutable congelado, buscar el archivo embebido
+    elif getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # sys._MEIPASS es el directorio temporal donde PyInstaller desempaqueta los datos
+        embedded_db_path = os.path.join(sys._MEIPASS, 'mastercodes.json')
+        if os.path.exists(embedded_db_path):
+            db_path = embedded_db_path
+
+    # 4. Si no se encontró ninguna ruta válida, advertir y salir
     if not db_path:
-        print("[WARN] Local mastercode database not found.")
+        print("[WARN] Local mastercode database (mastercodes.json) not found.")
         return None, None
 
-    with open(db_path, 'r', encoding='utf-8') as f:
-        db = json.load(f)
-    entry = db.get(base)
-    if entry:
-        return entry["title"], entry["mastercode"]
-    return None, None
+    # 5. Abrir y cargar la base de datos
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            db = json.load(f)
+        entry = db.get(base)
+        if entry:
+            return entry["title"], entry["mastercode"]
+        return None, None
+    except Exception as e:
+        print(f"[ERROR] Failed to load mastercode database from {db_path}: {e}")
+        return None, None
 
 
 def parse_elf_strings(path: str, patterns: Iterable[bytes]) -> List[str]:
