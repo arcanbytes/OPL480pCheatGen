@@ -48,6 +48,7 @@ if __name__ == "__main__":
         'OPL480pCheatGen.py',
         'OPL480pCheatGen',
         ['opl480pcheatgen/mastercodes.json'],
+        icon='img/OPL480pCheatGen_cmd.ico',
         is_gui=False,
     )
     shutil.copy2('opl480pcheatgen/mastercodes.json', 'dist/mastercodes.json')

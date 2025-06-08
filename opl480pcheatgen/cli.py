@@ -22,17 +22,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help='Force the game into 240p progressive mode')
     p.add_argument('--pal60', dest='pal60', action='store_true',
                    help='Enable PAL 60Hz patch for PAL region games')
-    p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
+    p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value (vertical offset)')
     p.add_argument('--aggressive', dest='aggressive', action='store_true',
                    help='Aggressively patch DISPLAY writes')
     p.add_argument('--debug-aggr', dest='debug_aggr', action='store_true',
                    help='Print potential DISPLAY writes for analysis')
-    p.add_argument('--force-aggr-skipcheck', dest='force_aggr_skip', action='store_true',
+    p.add_argument('--aggr-skipcheck', dest='force_aggr_skip', action='store_true',
                    help='Override safety checks during aggressive patching')
-    p.add_argument('--inject-hook', dest='inject_hook', type=lambda x: int(x, 16),
-                   help='Manual hook address for aggressive patch')
-    p.add_argument('--inject-handler', dest='inject_handler', type=lambda x: int(x, 16),
-                   help='Manual handler address for aggressive patch')
+    p.add_argument('--injhook', dest='inject_hook', type=lambda x: int(x, 16),
+                   help='Manual hook address for aggressive patch', metavar='HOOK')
+    p.add_argument('--injhandler', dest='inject_handler', type=lambda x: int(x, 16),
+                   help='Manual handler address for aggressive patch', metavar='HANDLER')
     return p
 
 
