@@ -4,7 +4,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import json
 import sys, os, argparse, tempfile, re, struct
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS32, CS_MODE_BIG_ENDIAN
+from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN
+from capstone.mips import MIPS_OP_MEM
 
 # Optional imports
 try:
@@ -28,7 +29,7 @@ SCEGSPUTDISPENV_SIG = bytes([
 ])
 CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
 CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
-DISPLAY1_ADDR = 0x12000000
+DISPLAY1_ADDR = 0x12000080
 DISPLAY2_ADDR = 0x120000A0
 ELF_MODE_PATTERNS = [
     b'480p',
@@ -103,29 +104,43 @@ def parse_elf_strings(path, patterns=ELF_MODE_PATTERNS):
         pass
     return sorted(found)
 
-# Analyze GS DISPLAY writes
-def analyze_display(insns, interlace_patch=True):
-    regs, mode, d2 = {}, None, []
-    for ins in insns:
-        if ins.mnemonic == 'lui':
-            regs[ins.operands[0].reg] = ins.operands[1].imm << 16
-        elif ins.mnemonic == 'ori' and ins.operands[1].reg in regs:
-            regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
-        elif ins.mnemonic == 'sd':
-            m = ins.operands[1]
-            if m.type == 1 and m.base in regs:
-                addr = (regs[m.base] + m.disp) & 0xFFFFFFFF
-                if addr == DISPLAY1_ADDR and not mode:
-                    val = regs.get(ins.operands[0].reg)
-                    if val is not None:
-                        w, h = val & 0x7FF, (val >> 11) & 0x7FF
-                        i = (val >> 22) & 1
-                        mode = (w, h, bool(i))
-                        print(f"[INFO] Found DISPLAY1 write: {w}×{h}, {'interlaced' if i else 'progressive'}")
-                elif addr == DISPLAY2_ADDR and interlace_patch:
-                    code = (0x20 << 24) | (ins.address & 0x00FFFFFF)
-                    d2.append((code, 0x00000000))
-    return mode, d2
+# Analyze GS DISPLAY writes heuristically
+def analyze_display(insns, interlace_patch=False, debug=False):
+    """Locate potential DISPLAY register writes."""
+
+    matches = []
+    details = []
+    suspect_bases = {2, 3, 4, 5, 6, 7}  # $v0–$a3
+
+    # Analyze each instruction to locate potential DISPLAY register writes
+    for i, ins in enumerate(insns):
+        if ins.mnemonic != "sd" or not ins.operands:
+            continue
+
+        mem_op = ins.operands[1]
+        if mem_op.type != MIPS_OP_MEM:
+            continue
+
+        addr = mem_op.mem.disp
+        base = getattr(mem_op.mem, "base", None)
+
+        if addr in (0x80, 0xA0) and (base is None or base in suspect_bases):
+            matches.append((i, ins))
+            if debug:
+                details.append(
+                    f"[MATCH] Address: 0x{ins.address:08X}, Instruction: {ins.mnemonic}, Operands: {ins.op_str} -> Suspect write to DISPLAYx"
+                )
+        elif debug:
+            why = []
+            if addr not in (0x80, 0xA0):
+                why.append(f"disp != 0x80/0xA0 (was 0x{addr:X}); expected DISPLAY register addresses")
+            if base not in suspect_bases:
+                why.append(f"base={base} not in $v0-$a3 (these registers are commonly used for temporary values and addressing in MIPS assembly)")
+            details.append(
+                f"[SKIP] Address: 0x{ins.address:08X}, Instruction: {ins.mnemonic}, Operands: {ins.op_str} -> Reasons: {'; '.join(why)}"
+            )
+
+    return matches, details
 
 def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100, return_offset=12, return_addr=None, patch_addr=None):
     """Return cheat codes to override DY via sceGsPutDispEnv.
@@ -173,8 +188,92 @@ def generate_putdispenv_patch(dy_value, base_addr, orig_inst, patch_offset=0x100
     ]
     return [((0x20 << 24) | ((fv + i * 4) & 0x00FFFFFF), val) for i, val in enumerate(vals)]
 
+# Aggressive progressive patch helpers
+def _r(funct, rs, rt, rd, sa=0):
+    return (rs << 21) | (rt << 16) | (rd << 11) | (sa << 6) | funct
+
+def _or(rd, rs, rt):
+    return _r(0x25, rs, rt, rd)
+
+def _addu(rd, rs, rt):
+    return _r(0x21, rs, rt, rd)
+
+def _lui(rt, imm):
+    return (0x0F << 26) | (rt << 16) | (imm & 0xFFFF)
+
+def _j(addr):
+    return (0x02 << 26) | ((addr // 4) & 0x03FFFFFF)
+
+def generate_display_patch(orig_insn, reg, patch_addr, ret_addr):
+    """Build instructions that modify DISPLAY writes."""
+    t0 = 8  # $t0 scratch
+    at = 1
+    vals = [
+        _or(t0, reg, 0),             # or $t0, reg, $zero (save)
+        _lui(at, 1),                 # lui $at, 0x0001
+        _addu(reg, reg, at),         # addu reg, reg, $at
+        orig_insn,                   # original sd instruction
+        _or(reg, t0, 0),             # restore reg
+        _j(ret_addr),                # jump back
+        0x00000000                   # nop
+    ]
+    return [((0x20 << 24) | ((patch_addr + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
+
+def find_sd(insns, include_all=False):
+    """Locate DISPLAY register writes in a stream of instructions.
+
+    The original implementation only handled ``addiu`` sequences. Some games
+    build the DISPLAY address using ``daddiu`` in 64-bit code, so this function
+    also recognises that pattern. The ``regs`` dictionary is updated whenever a
+    register is loaded with an immediate using ``lui``/``ori`` or when an offset
+    is added via ``addiu``/``daddiu``. Constants are additionally propagated
+    through ``or``, ``addu`` and ``daddu`` so that more complex address
+    construction sequences are understood. If a subsequent ``sd`` stores to
+    ``DISPLAY1`` or ``DISPLAY2`` using a tracked base register, the instruction
+    and its predecessor are returned so that a jump hook can be inserted.
+    """
+
+    matches = []
+    regs = {0: 0}  # track known register constants, start with $zero
+    prev = None
+    for ins in insns:
+        if ins.mnemonic == 'lui':
+            regs[ins.operands[0].reg] = ins.operands[1].imm << 16
+        elif ins.mnemonic == 'ori' and ins.operands[1].reg in regs:
+            regs[ins.operands[0].reg] = regs[ins.operands[1].reg] | ins.operands[2].imm
+        elif ins.mnemonic in ('addiu', 'daddiu') and ins.operands[1].reg in regs:
+            regs[ins.operands[0].reg] = (regs[ins.operands[1].reg] + ins.operands[2].imm) & 0xFFFFFFFF
+        # propagate constants via ``or``/``addu``/``daddu`` when both operands are known
+        elif ins.mnemonic in ('or', 'addu', 'daddu'):
+            rs = ins.operands[1].reg
+            rt = ins.operands[2].reg
+            if rs in regs and rt in regs:
+                if ins.mnemonic == 'or':
+                    regs[ins.operands[0].reg] = regs[rs] | regs[rt]
+                else:
+                    regs[ins.operands[0].reg] = (regs[rs] + regs[rt]) & 0xFFFFFFFF
+        elif ins.mnemonic == 'sd':
+            m = ins.operands[1]
+            if m.type == MIPS_OP_MEM:
+                base = m.mem.base
+                disp = m.mem.disp
+                if base in regs:
+                    addr = (regs[base] + disp) & 0xFFFFFFFF
+                    if addr in (DISPLAY1_ADDR, DISPLAY2_ADDR):
+                        if prev is not None:
+                            matches.append((ins.address, ins.bytes, ins.operands[0].reg,
+                                            prev.address, prev.bytes, prev))
+                        elif include_all:
+                            matches.append((ins.address, ins.bytes, ins.operands[0].reg,
+                                            None, None, None))
+        prev = ins
+    return matches
+
 # Main extraction & patch logic
-def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True, force_240p=False, pal60=False, new_dy=None):
+def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patch=True,
+                    force_240p=False, pal60=False, new_dy=None, aggressive=False,
+                    debug_aggr=False, force_aggr_skip=False,
+                    inject_hook=None, inject_handler=None):
     fname = os.path.basename(elf_path)
     if base_override:
         base = base_override
@@ -241,13 +340,14 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
     reset = None
     default_mode = None
     all_d2 = []
+    aggr_hits = []
     
     if not os.path.isfile(elf_path):
         sys.exit(f"Error: File not found: {elf_path}")
 
     with open(elf_path,'rb') as f:
         elf = ELFFile(f)
-        md  = Cs(CS_ARCH_MIPS, CS_MODE_MIPS32 + CS_MODE_BIG_ENDIAN)
+        md  = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + CS_MODE_BIG_ENDIAN)
         md.detail = True
         for seg in elf.iter_segments():
             if seg['p_type'] != 'PT_LOAD': continue
@@ -258,10 +358,19 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     reset = vaddr + off
                     print(f"[INFO] Detected sceGsResetGraph at 0x{reset:08X}")
             insns = list(md.disasm(data, vaddr))
-            m, d2 = analyze_display(insns, interlace_patch)
-            if m and not default_mode:
-                default_mode = m
-            all_d2 += d2
+            matches, dbg = analyze_display(insns, interlace_patch, aggressive)
+            if aggressive or debug_aggr:
+                for logline in dbg:
+                    print(logline)
+                print(f"[DEBUG] Aggressive hits: {len(matches)} potential display writes found")
+            if aggressive or debug_aggr:
+                aggr_hits.extend(find_sd(insns, include_all=debug_aggr))
+
+        if aggressive or debug_aggr:
+            print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
+            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
+                prev_name = prev_ins.mnemonic if prev_ins else 'None'
+                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev: {prev_name}")
 
         dy_patch = None
         if new_dy is not None:
@@ -297,6 +406,80 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
                     break
 
+        aggr_patch = None
+        if aggressive and aggr_hits and len(aggr_hits) > 0:
+            clobber2 = None
+            for seg in elf.iter_segments():
+                if seg['p_type'] != 'PT_LOAD':
+                    continue
+                data, seg_base = seg.data(), seg['p_vaddr']
+                pos = data.find(CLOBBER_STR2)
+                if pos >= 0:
+                    clobber2 = seg_base + pos
+                    print(f"[INFO] Found clobber string #2 at 0x{clobber2:08X}")
+                    break
+            patch_base = clobber2 if clobber2 is not None else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
+            patch_lines = []
+            offset = 0
+            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
+                if prev_addr is None:
+                    print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
+                    continue
+                    if aggressive or debug_aggr:
+                        print(f"[WARN] No preceding instruction for sd at {addr:08X}")
+                    continue
+                skip = False
+                ret_addr = addr + 8
+                delay_opcode = struct.unpack('>I', prev_bytes)[0]
+                if prev_ins.mnemonic == 'beq' and len(prev_ins.operands) == 3:
+                    if prev_ins.operands[0].reg == 0 and prev_ins.operands[1].reg == 0:
+                        off = prev_ins.operands[2].imm
+                        if off & 0x8000:
+                            off |= -0x10000
+                        ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
+                        delay_opcode = 0
+                    else:
+                        skip = True
+                elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
+                    skip = True
+                    if aggressive or debug_aggr:
+                        print(f"[WARN] Skipping complex branch at {prev_addr:08X}")
+                    if not force_aggr_skip:
+                        continue
+                patch_addr = patch_base + offset
+                j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
+                patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
+                patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
+                if len(b) == 4:
+                    orig = struct.unpack('>I', b)[0]
+                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
+                else:
+                    print(f"[WARN] Skipping instruction at {addr:08X} due to invalid buffer length: {len(b)}")
+                patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
+                offset += 7 * 4
+            aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
+
+        # Manual injection override
+        manual_patch = None
+        if inject_hook and inject_handler:
+            print("[INFO] Injecting fixed aggressive patch manually.")
+            vals = [
+                0x3C020010, 0x344226DC, 0x8C820000, 0x38420001, 0xAC820000,
+                0x3C021700, 0x3442FFFC, 0x3C030000, 0x3463000F, 0xAC430038,
+                0x0800E003, 0x00000000
+            ]
+            manual_lines = [
+                ((0x20 << 24) | ((inject_handler + i * 4) & 0x00FFFFFF), v)
+                for i, v in enumerate(vals)
+            ]
+            manual_lines.append(
+                ((0x20 << 24) | (inject_hook & 0x00FFFFFF), 0x08000000 | (inject_handler // 4))
+            )
+            manual_lines.append(
+                ((0x20 << 24) | ((inject_hook + 4) & 0x00FFFFFF), 0x00000000)
+            )
+            manual_patch = ("//Aggressive DISPLAY patch", manual_lines)
+
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
         w0, h0, i0 = default_mode
@@ -315,6 +498,10 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
 
     if dy_patch:
         cheats.append(dy_patch)
+    if manual_patch:
+        cheats.append(manual_patch)
+    elif aggr_patch:
+        cheats.append(aggr_patch)
 
     # No-interlace patch
     if all_d2:
@@ -456,6 +643,16 @@ if __name__ == '__main__':
     p.add_argument('--pal60', dest='pal60', action='store_true',
                    help='Enable PAL 60Hz patch for PAL region games')
     p.add_argument('--dy', dest='dy', type=int, help='Override GS DY value')
+    p.add_argument('--aggressive', dest='aggressive', action='store_true',
+                   help='Aggressively patch DISPLAY writes')
+    p.add_argument('--debug-aggr', dest='debug_aggr', action='store_true',
+                   help='Print potential DISPLAY writes for analysis')
+    p.add_argument('--force-aggr-skipcheck', dest='force_aggr_skip', action='store_true',
+                   help='Override safety checks during aggressive patching')
+    p.add_argument('--inject-hook', dest='inject_hook', type=lambda x: int(x, 16),
+                   help='Manual hook address for aggressive patch')
+    p.add_argument('--inject-handler', dest='inject_handler', type=lambda x: int(x, 16),
+                   help='Manual handler address for aggressive patch')
     if len(sys.argv) == 1:
         p.print_help()
         sys.exit(0)  
@@ -474,7 +671,12 @@ if __name__ == '__main__':
             interlace_patch=args.interlace_patch,
             force_240p=args.force_240p,
             pal60=args.pal60,
-            new_dy=args.dy
+            new_dy=args.dy,
+            aggressive=args.aggressive,
+            debug_aggr=args.debug_aggr,
+            force_aggr_skip=args.force_aggr_skip,
+            inject_hook=args.inject_hook,
+            inject_handler=args.inject_handler,
         )
         if args.preview_only:
             print(format_cht_text(cheats))
@@ -487,7 +689,12 @@ if __name__ == '__main__':
             interlace_patch=args.interlace_patch,
             force_240p=args.force_240p,
             pal60=args.pal60,
-            new_dy=args.dy
+            new_dy=args.dy,
+            aggressive=args.aggressive,
+            debug_aggr=args.debug_aggr,
+            force_aggr_skip=args.force_aggr_skip,
+            inject_hook=args.inject_hook,
+            inject_handler=args.inject_handler,
         )
         if args.preview_only:
             print(format_cht_text(cheats))
