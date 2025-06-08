@@ -1,6 +1,7 @@
 /build
 /dist
 /release
+/.temp
 OPL480pCheatGenGUI.spec
 OPL480pCheatGen.spec
 OPL480pCheatGen.code-workspace
