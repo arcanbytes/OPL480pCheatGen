@@ -65,8 +65,6 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
 --force-240p          # Use 240p instead of 480p
 --dy 51               # Override vertical offset (DY)
 --mastercode "CODE"   # Manually override mastercode
---inject-hook ADDR    # Manually specify hook address for aggressive patch
---inject-handler ADDR # Manually specify handler address for aggressive patch
 ```
 
 ---

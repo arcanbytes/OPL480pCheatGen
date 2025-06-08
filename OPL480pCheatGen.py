@@ -112,6 +112,7 @@ def analyze_display(insns, interlace_patch=False, debug=False):
     details = []
     suspect_bases = {2, 3, 4, 5, 6, 7}  # $v0–$a3
 
+    # Analyze each instruction to locate potential DISPLAY register writes
     for i, ins in enumerate(insns):
         if ins.mnemonic != "sd" or not ins.operands:
             continue
@@ -123,20 +124,20 @@ def analyze_display(insns, interlace_patch=False, debug=False):
         addr = mem_op.mem.disp
         base = getattr(mem_op.mem, "base", None)
 
-        if addr in (0x80, 0xA0) and (base in suspect_bases or base is None):
+        if addr in (0x80, 0xA0) and (base is None or base in suspect_bases):
             matches.append((i, ins))
             if debug:
                 details.append(
-                    f"[MATCH] {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> suspect write to DISPLAYx"
+                    f"[MATCH] Address: 0x{ins.address:08X}, Instruction: {ins.mnemonic}, Operands: {ins.op_str} -> Suspect write to DISPLAYx"
                 )
         elif debug:
             why = []
             if addr not in (0x80, 0xA0):
-                why.append(f"disp != 0x80/0xA0 (was 0x{addr:X})")
+                why.append(f"disp != 0x80/0xA0 (was 0x{addr:X}); expected DISPLAY register addresses")
             if base not in suspect_bases:
-                why.append(f"base={base} not in $v0-$a3")
+                why.append(f"base={base} not in $v0-$a3 (these registers are commonly used for temporary values and addressing in MIPS assembly)")
             details.append(
-                f"[SKIP]  {ins.address:08X}: {ins.mnemonic} {ins.op_str} -> " + "; ".join(why)
+                f"[SKIP] Address: 0x{ins.address:08X}, Instruction: {ins.mnemonic}, Operands: {ins.op_str} -> Reasons: {'; '.join(why)}"
             )
 
     return matches, details
@@ -357,15 +358,15 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     reset = vaddr + off
                     print(f"[INFO] Detected sceGsResetGraph at 0x{reset:08X}")
             insns = list(md.disasm(data, vaddr))
-            matches, dbg = analyze_display(insns, interlace_patch, debug_aggr)
-            if debug_aggr:
+            matches, dbg = analyze_display(insns, interlace_patch, aggressive)
+            if aggressive or debug_aggr:
                 for logline in dbg:
                     print(logline)
                 print(f"[DEBUG] Aggressive hits: {len(matches)} potential display writes found")
             if aggressive or debug_aggr:
                 aggr_hits.extend(find_sd(insns, include_all=debug_aggr))
 
-        if debug_aggr:
+        if aggressive or debug_aggr:
             print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
             for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
                 prev_name = prev_ins.mnemonic if prev_ins else 'None'
@@ -406,7 +407,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                     break
 
         aggr_patch = None
-        if aggressive and aggr_hits:
+        if aggressive and aggr_hits and len(aggr_hits) > 0:
             clobber2 = None
             for seg in elf.iter_segments():
                 if seg['p_type'] != 'PT_LOAD':
@@ -422,7 +423,9 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
             offset = 0
             for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
                 if prev_addr is None:
-                    if debug_aggr:
+                    print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
+                    continue
+                    if aggressive or debug_aggr:
                         print(f"[WARN] No preceding instruction for sd at {addr:08X}")
                     continue
                 skip = False
@@ -439,8 +442,7 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                         skip = True
                 elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
                     skip = True
-                if skip:
-                    if debug_aggr:
+                    if aggressive or debug_aggr:
                         print(f"[WARN] Skipping complex branch at {prev_addr:08X}")
                     if not force_aggr_skip:
                         continue
@@ -448,7 +450,11 @@ def extract_patches(elf_path, base_override=None, manual_mc=None, interlace_patc
                 j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                 patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
-                orig = struct.unpack('>I', b)[0]
+                if len(b) == 4:
+                    orig = struct.unpack('>I', b)[0]
+                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
+                else:
+                    print(f"[WARN] Skipping instruction at {addr:08X} due to invalid buffer length: {len(b)}")
                 patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
                 offset += 7 * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
