@@ -52,12 +52,13 @@ Run `OPL480pCheatGenGUI.exe`:
 
 ## 🧪 Command-Line Interface
 
-Run the tool directly via Python or the `.exe`:
+Open a Windows command line terminal and run `OPL480pCheatGen.exe`. The resulting .cht file will be saved in the same folder where you launched the program.
 
 ```bash
 # Basic usage examples
-python OPL480pCheatGen.py "Game.iso"
-OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only --force-240p
+OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" 
+OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --force-240p
+OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only 
 
 # Optional flags:
 --preview-only        # Show .cht content in console, do not write file
@@ -80,7 +81,7 @@ If, after applying the generated `.cht` codes, you experience issues such as:
 - Corrupted graphics.
 - The game failing to launch correctly.
 
-We recommend trying the integrated OPL GSM (Graphics Synthesizer Mode Selector), specifically the "HDTV 480p Mode" found within each game's configuration. GSM is a hardware-level video scaling solution that often offers broader compatibility, though it may introduce its own performance issues or visual glitches in certain titles.
+Then try the integrated OPL GSM (Graphics Synthesizer Mode Selector), specifically the "HDTV 480p Mode" found within each game's configuration. GSM is a hardware-level video scaling solution that often offers broader compatibility, though it may introduce its own performance issues or visual glitches in certain titles.
 
 ---
 
@@ -95,5 +96,5 @@ Copyright (c) 2025 ArcanBytes<br>
 ## 🙏 Credits
 
 Created by ArcanBytes, built for the PS2 homebrew and OPL community.<br> 
-Mastercode database based on: [PS2-Widescreen/Bare-Mastercodes-bin](https://github.com/PS2-Widescreen/Bare-Mastercodes-bin)<br>
+Mastercode database initially created using [PS2-Widescreen/Bare-Mastercodes-bin](https://github.com/PS2-Widescreen/Bare-Mastercodes-bin)<br>
 Original inspiration / idea: [asmodean's ps2force480p](http://asmodean.reverse.net/pages/ps2force480p.html)
