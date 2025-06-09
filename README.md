@@ -68,6 +68,17 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only
 --mastercode "CODE"   # Manually override mastercode
 ```
 
+### Patch ISO directly
+
+You can also patch the ISO itself without generating a `.cht` file:
+
+```bash
+python -m opl480pcheatgen.patchiso Game.iso --force-240p
+```
+
+The optional flags are the same as above, except `--preview-only` and
+`--mastercode` which are not used when patching an ISO.
+
 ---
 
 ## 🎮 Working Patches Examples
