@@ -21,6 +21,31 @@ def _addu(rd: int, rs: int, rt: int) -> int:
     return _r(0x21, rs, rt, rd)
 
 
+def _daddu(rd: int, rs: int, rt: int) -> int:
+    """Assemble a ``daddu`` instruction."""
+    return _r(0x2D, rs, rt, rd)
+
+
+def _addiu(rt: int, rs: int, imm: int) -> int:
+    """Assemble an ``addiu`` instruction."""
+    return (0x09 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)
+
+
+def _sll(rd: int, rt: int, sa: int) -> int:
+    """Assemble a ``sll`` instruction."""
+    return _r(0x00, 0, rt, rd, sa)
+
+
+def _sd(rt: int, base: int, disp: int) -> int:
+    """Assemble an ``sd`` instruction."""
+    return (0x3F << 26) | (base << 21) | (rt << 16) | (disp & 0xFFFF)
+
+
+def _ld(rt: int, base: int, disp: int) -> int:
+    """Assemble an ``ld`` instruction."""
+    return (0x37 << 26) | (base << 21) | (rt << 16) | (disp & 0xFFFF)
+
+
 def _lui(rt: int, imm: int) -> int:
     """Assemble a ``lui`` instruction."""
     return (0x0F << 26) | (rt << 16) | (imm & 0xFFFF)
@@ -31,19 +56,23 @@ def _j(addr: int) -> int:
     return (0x02 << 26) | ((addr // 4) & 0x03FFFFFF)
 
 
-def generate_display_patch(orig_insn: int, reg: int, patch_addr: int, ret_addr: int) -> List[Tuple[int, int]]:
-    """Generate instructions that modify DISPLAY register writes."""
-    t0 = 8
-    at = 1
-    vals = [
-        _or(t0, reg, 0),
-        _lui(at, 1),
-        _addu(reg, reg, at),
-        orig_insn,
-        _or(reg, t0, 0),
+def generate_display_patch(orig_insn: int, reg: int, patch_addr: int, ret_addr: int, with_store: bool) -> List[Tuple[int, int]]:
+    """Generate instructions matching ps2force480p's aggressive patch."""
+    sp = 29
+    temp = 6 if reg == 5 else 5
+
+    vals = []
+    if with_store:
+        vals.append(_sd(temp, sp, -8))
+    vals.extend([
+        _addiu(temp, 0, 0x10),
+        _sll(temp, temp, 12),
+        _daddu(reg, reg, temp),
+        _ld(temp, sp, -8),
         _j(ret_addr),
-        0x00000000,
-    ]
+        orig_insn,
+    ])
+
     return [((0x20 << 24) | ((patch_addr + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
 
 

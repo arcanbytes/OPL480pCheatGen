@@ -13,7 +13,13 @@ from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN
 from capstone.mips import MIPS_OP_MEM
 
 from .helpers import find_pattern, fetch_mastercode, parse_elf_strings, extract_boot_id_from_iso
-from .aggressive import DISPLAY1_ADDR, DISPLAY2_ADDR, generate_display_patch, find_sd
+from .aggressive import (
+    DISPLAY1_ADDR,
+    DISPLAY2_ADDR,
+    generate_display_patch,
+    find_sd,
+    _sd,
+)
 
 SCEGSRESETGRAPH_SIG = bytes([
     0xB0, 0xFF, 0xBD, 0x27, 0x00, 0x24, 0x04, 0x00,
@@ -32,6 +38,13 @@ SCEGSPUTDISPENV_SIG = bytes([
 
 CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
 CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
+
+VSYNC_HANDLER_SIG = bytes([
+    0x00, 0x12, 0x02, 0x3C, 0x00, 0x10, 0x42, 0xDC,
+    0x7A, 0x13, 0x02, 0x00, 0x01, 0x00, 0x42, 0x30,
+    0x06, 0x00, 0x40, 0x14, 0x00, 0x00, 0x00, 0x00,
+    0x0F, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x42,
+])
 
 ELF_MODE_PATTERNS = [
     b'480p',
@@ -257,13 +270,16 @@ def extract_patches(
                     continue
                 ret_addr = addr + 8
                 delay_opcode = struct.unpack('>I', prev_bytes)[0]
+                use_store = True
+                store_insn = _sd(6 if reg == 5 else 5, 29, -8)
                 if prev_ins.mnemonic == 'beq' and len(prev_ins.operands) == 3:
                     if prev_ins.operands[0].reg == 0 and prev_ins.operands[1].reg == 0:
                         off = prev_ins.operands[2].imm
                         if off & 0x8000:
                             off |= -0x10000
                         ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
-                        delay_opcode = 0
+                        delay_opcode = store_insn
+                        use_store = False
                 elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
                     if not force_aggr_skip:
                         continue
@@ -273,8 +289,8 @@ def extract_patches(
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
                 if len(b) == 4:
                     orig = struct.unpack('>I', b)[0]
-                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
-                offset += 7 * 4
+                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr, use_store))
+                offset += (7 if use_store else 6) * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
 
         manual_patch = None
@@ -289,6 +305,30 @@ def extract_patches(
             manual_lines.append(((0x20 << 24) | (inject_hook & 0x00FFFFFF), 0x08000000 | (inject_handler // 4)))
             manual_lines.append(((0x20 << 24) | ((inject_hook + 4) & 0x00FFFFFF), 0x00000000))
             manual_patch = ("//Aggressive DISPLAY patch", manual_lines)
+
+        persona_patch = None
+        for seg in elf.iter_segments():
+            if seg['p_type'] != 'PT_LOAD':
+                continue
+            data, seg_base = seg.data(), seg['p_vaddr']
+            off = find_pattern(data, VSYNC_HANDLER_SIG)
+            if off >= 0:
+                patch_loc = seg_base + off
+                print(f"[INFO] Persona 3/4 VSync handler detected at 0x{patch_loc:08X}")
+                vals = [
+                    0x00000000, 0x00000000, 0x8C820000, 0x38420001, 0xAC820000,
+                    0x000217FC, 0x000217FF, 0x0000000F, 0x42000038, 0x03E00008,
+                    0x00000000,
+                ]
+                data_loc = patch_loc + len(vals) * 4
+                vals[0] = 0x3C040000 | (data_loc >> 16)
+                vals[1] = 0x34840000 | (data_loc & 0xFFFF)
+                vals.append(0x00000001)
+                persona_patch = (
+                    "//Persona 3/4 frame rate fix",
+                    [((0x20 << 24) | ((patch_loc + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)],
+                )
+                break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
@@ -310,6 +350,8 @@ def extract_patches(
         cheats.append(manual_patch)
     elif aggr_patch:
         cheats.append(aggr_patch)
+    if persona_patch:
+        cheats.append(persona_patch)
 
     if all_d2:
         cheats.append(("//NOP DISPLAY2 writes", all_d2))
