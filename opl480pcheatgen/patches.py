@@ -9,7 +9,7 @@ import sys
 from typing import List, Tuple
 
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN
+from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN, CS_MODE_LITTLE_ENDIAN
 from capstone.mips import MIPS_OP_MEM
 
 from .helpers import find_pattern, fetch_mastercode, parse_elf_strings, extract_boot_id_from_iso
@@ -17,7 +17,7 @@ from .aggressive import (
     DISPLAY1_ADDR,
     DISPLAY2_ADDR,
     generate_display_patch,
-    find_sd,
+    scan_sd,
     _sd,
 )
 
@@ -189,7 +189,8 @@ def extract_patches(
 
     with open(elf_path, 'rb') as f:
         elf = ELFFile(f)
-        md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + CS_MODE_BIG_ENDIAN)
+        endian_mode = CS_MODE_LITTLE_ENDIAN if elf.little_endian else CS_MODE_BIG_ENDIAN
+        md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + endian_mode)
         md.detail = True
         for seg in elf.iter_segments():
             if seg['p_type'] != 'PT_LOAD':
@@ -205,14 +206,14 @@ def extract_patches(
             if aggressive or debug_aggr:
                 for logline in dbg:
                     print(logline)
-            if aggressive or debug_aggr:
-                aggr_hits.extend(find_sd(insns, include_all=debug_aggr))
+                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR))
+                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR))
 
         if aggressive or debug_aggr:
             print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
-            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
-                prev_name = prev_ins.mnemonic if prev_ins else 'None'
-                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev: {prev_name}")
+            for addr, b, reg, prev_addr, prev_bytes, _prev in aggr_hits:
+                prev_name = f"0x{_prev:08X}" if _prev is not None else 'None'
+                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev opcode: {prev_name}")
 
         dy_patch = None
         if new_dy is not None:
@@ -264,23 +265,25 @@ def extract_patches(
             patch_base = clobber2 if clobber2 is not None else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
             patch_lines = []
             offset = 0
-            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
+            for addr, b, reg, prev_addr, prev_bytes, prev_word in aggr_hits:
                 if prev_addr is None:
                     print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
                     continue
                 ret_addr = addr + 8
-                delay_opcode = struct.unpack('>I', prev_bytes)[0]
+                delay_opcode = struct.unpack('<I', prev_bytes)[0]
                 use_store = True
                 store_insn = _sd(6 if reg == 5 else 5, 29, -8)
-                if prev_ins.mnemonic == 'beq' and len(prev_ins.operands) == 3:
-                    if prev_ins.operands[0].reg == 0 and prev_ins.operands[1].reg == 0:
-                        off = prev_ins.operands[2].imm
-                        if off & 0x8000:
-                            off |= -0x10000
-                        ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
-                        delay_opcode = store_insn
-                        use_store = False
-                elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
+                opr = (prev_word >> 26) & 0x3F
+                rs = (prev_word >> 21) & 0x1F
+                rt = (prev_word >> 16) & 0x1F
+                if opr == 4 and rs == 0 and rt == 0:
+                    off = prev_word & 0xFFFF
+                    if off & 0x8000:
+                        off |= -0x10000
+                    ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
+                    delay_opcode = store_insn
+                    use_store = False
+                elif opr in (1, 7, 6, 5):
                     if not force_aggr_skip:
                         continue
                 patch_addr = patch_base + offset
@@ -288,7 +291,7 @@ def extract_patches(
                 patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
                 if len(b) == 4:
-                    orig = struct.unpack('>I', b)[0]
+                    orig = struct.unpack('<I', b)[0]
                     patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr, use_store))
                 offset += (7 if use_store else 6) * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
@@ -386,11 +389,11 @@ def extract_patches(
 
     # Mirror ps2force480p's handler constants
     table_vals = [
-        0x4480B800, 0x4480C000, 0x4480C800, 0x4480D000,
-        0x4480D800, 0x4480E000, 0x4480E800, 0x4480F000,
-        0x4480F800, 0x46010018,
+        0x4480E000, 0x4480E800, 0x4480F000, 0x4480F800,
+        0x46010018, 0x0000040F, 0x44C0F800, 0x3C020076,
+        0x3C030094, 0x24424280,
     ]
-    tbl_addr = 0x00100100
+    tbl_addr = 0x00100180
     tbl_codes = [((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
                  for i, v in enumerate(table_vals)]
     cheats.append(("//Init constants", tbl_codes))

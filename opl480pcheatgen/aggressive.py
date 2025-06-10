@@ -1,6 +1,7 @@
 """Helpers for aggressive DISPLAY patch generation."""
 
 from typing import List, Tuple
+import struct
 
 DISPLAY1_ADDR = 0x12000080
 DISPLAY2_ADDR = 0x120000A0
@@ -109,5 +110,43 @@ def find_sd(insns, include_all: bool = False):
                         elif include_all:
                             matches.append((ins.address, ins.bytes, ins.operands[0].reg, None, None, None))
         prev = ins
+    return matches
+
+
+def scan_sd(data: bytes, base_addr: int, target: int) -> List[tuple[int, bytes, int, int | None, bytes | None, int | None]]:
+    """Raw search for ``sd`` instructions storing to *target* address."""
+    matches = []
+    regs = [0] * 32
+    for off in range(0, len(data) - 4, 4):
+        word = struct.unpack_from('<I', data, off)[0]
+        opr = (word >> 26) & 0x3F
+        rs = (word >> 21) & 0x1F
+        rt = (word >> 16) & 0x1F
+        imm = word & 0xFFFF
+        if opr == 0x0F:  # lui
+            regs[rt] = (imm << 16) & 0xFFFFFFFF
+        elif opr == 0x09:  # addiu
+            if imm & 0x8000:
+                imm |= -0x10000
+            regs[rt] = (regs[rs] + imm) & 0xFFFFFFFF
+        elif opr == 0x0D:  # ori
+            regs[rt] = regs[rs] | imm
+        elif opr == 0x3F:  # sd
+            if imm & 0x8000:
+                imm |= -0x10000
+            if (regs[rs] + imm) & 0xFFFFFFFF == target:
+                prev_off = off - 4
+                prev_bytes = data[prev_off:prev_off + 4] if prev_off >= 0 else None
+                prev_word = struct.unpack_from('<I', data, prev_off)[0] if prev_off >= 0 else None
+                matches.append(
+                    (
+                        base_addr + off,
+                        data[off:off + 4],
+                        rt,
+                        base_addr + prev_off if prev_off >= 0 else None,
+                        prev_bytes,
+                        prev_word,
+                    )
+                )
     return matches
 
