@@ -68,7 +68,7 @@ def generate_display_patch(orig_insn: int, reg: int, patch_addr: int, ret_addr: 
     vals.extend([
         _addiu(temp, 0, 0x10),
         _sll(temp, temp, 12),
-        _daddu(reg, reg, temp),
+        _daddu(reg, temp, reg),
         _ld(temp, sp, -8),
         _j(ret_addr),
         orig_insn,

@@ -241,8 +241,7 @@ def extract_patches(
                     from_off = off - 16
                     orig_inst = struct.unpack("<I", data[from_off + 4:from_off + 8])[0]
                     hook_addr = seg_base + from_off + 4
-                    # ps2force480p stores handler 0xA8 bytes after the clobber string
-                    patch_addr = (clobber_addr + 0xA8) if clobber_addr else seg_base + 0x100
+                    patch_addr = clobber_addr if clobber_addr else seg_base + 0x100
                     j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                     hook_patch = [((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)]
                     ret_addr = seg_base + from_off + 12
@@ -269,7 +268,7 @@ def extract_patches(
                 if prev_addr is None:
                     print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
                     continue
-                ret_addr = addr + 8
+                ret_addr = addr + 4
                 delay_opcode = struct.unpack('<I', prev_bytes)[0]
                 use_store = True
                 store_insn = _sd(6 if reg == 5 else 5, 29, -8)
@@ -387,16 +386,7 @@ def extract_patches(
     elif region == 'PAL':
         print("[INFO] Skipping PAL<->NTSC switch.")
 
-    # Mirror ps2force480p's handler constants
-    table_vals = [
-        0x4480E000, 0x4480E800, 0x4480F000, 0x4480F800,
-        0x46010018, 0x0000040F, 0x44C0F800, 0x3C020076,
-        0x3C030094, 0x24424280,
-    ]
-    tbl_addr = 0x00100180
-    tbl_codes = [((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
-                 for i, v in enumerate(table_vals)]
-    cheats.append(("//Init constants", tbl_codes))
+
 
     return cheats, base, title
 
