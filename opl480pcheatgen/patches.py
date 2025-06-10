@@ -386,16 +386,6 @@ def extract_patches(
     elif region == 'PAL':
         print("[INFO] Skipping PAL<->NTSC switch.")
 
-    # Mirror ps2force480p's handler constants
-    table_vals = [
-        0x4480B800, 0x4480C000, 0x4480C800, 0x4480D000,
-        0x4480D800, 0x4480E000, 0x4480E800, 0x4480F000,
-        0x4480F800, 0x46010018,
-    ]
-    tbl_addr = 0x00100100
-    tbl_codes = [((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
-                 for i, v in enumerate(table_vals)]
-    cheats.append(("//Init constants", tbl_codes))
 
     return cheats, base, title
 
