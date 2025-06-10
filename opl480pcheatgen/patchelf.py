@@ -1,41 +1,15 @@
-"""Command-line tool to patch ISO images by modifying the boot ELF."""
+"""Command-line tool to patch a PS2 ELF directly."""
 
 from __future__ import annotations
 
 import argparse
 import os
-import re
 import struct
 import sys
-import tempfile
 
 from elftools.elf.elffile import ELFFile
 
 from .patches import extract_patches
-
-try:
-    import pycdlib
-except ImportError:  # pragma: no cover
-    pycdlib = None
-
-
-def _find_boot_path(iso: pycdlib.PyCdlib, override: str | None) -> str:
-    """Return the boot ELF path inside *iso*."""
-    if override:
-        p = '/' + override.upper()
-        if not p.endswith(';1'):
-            p += ';1'
-        return p
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".cnf") as tmp:
-        iso.get_file_from_iso(iso_path='/SYSTEM.CNF;1', local_path=tmp.name)
-        with open(tmp.name, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                line = line.strip().upper()
-                if "BOOT2" in line and "CDROM0:\\" in line:
-                    m = re.search(r'CDROM0:\\([^\s;]+);?1?', line)
-                    if m:
-                        return '/' + m.group(1).upper() + ';1'
-    raise RuntimeError('Could not determine BOOT2 path from SYSTEM.CNF')
 
 
 def _apply_patches_to_elf(path: str, codes: list[tuple[int, int]]):
@@ -62,10 +36,8 @@ def _apply_patches_to_elf(path: str, codes: list[tuple[int, int]]):
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    """Return the argument parser for ISO patching."""
-    p = argparse.ArgumentParser(description="Patch ISO image directly")
-    p.add_argument('iso', help='ISO image to patch')
-    p.add_argument('--elfpath', help='Path inside ISO to ELF (e.g. SLUS_123.45;1)')
+    p = argparse.ArgumentParser(description="Patch ELF file directly")
+    p.add_argument('elf', help='ELF file to patch')
     p.add_argument('--no-interlace-patch', dest='interlace_patch', action='store_false',
                    help='Disable No-Interlace patch (enabled by default)')
     p.add_argument('--force-240p', dest='force_240p', action='store_true',
@@ -87,10 +59,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Program entry point for ISO patching."""
-    if not pycdlib:
-        print('pycdlib is required to patch ISO images')
-        return 1
     parser = build_arg_parser()
     if argv is None:
         argv = sys.argv[1:]
@@ -101,22 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.dy is not None and not (-100 <= args.dy <= 100):
         print('Error: --dy must be between -100 and 100.')
         return 1
-    print(f"[INFO] Patching ISO {args.iso}")
-    iso = pycdlib.PyCdlib()
-    iso.open(args.iso)
-    try:
-        boot = _find_boot_path(iso, args.elfpath)
-        record = iso.get_record(iso_path=boot)
-        block_size = iso.logical_block_size
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.elf') as tmp:
-            iso.get_file_from_iso(iso_path=boot, local_path=tmp.name)
-    finally:
-        iso.close()
 
-    base = os.path.basename(boot).split(';')[0]
+    print(f"[INFO] Patching ELF {args.elf}")
     cheats, _gid, _title = extract_patches(
-        tmp.name,
-        base_override=base,
+        args.elf,
         interlace_patch=args.interlace_patch,
         force_240p=args.force_240p,
         pal60=args.pal60,
@@ -130,16 +86,8 @@ def main(argv: list[str] | None = None) -> int:
     patch_lines = []
     for _hdr, codes in cheats[1:]:
         patch_lines.extend(codes)
-    _apply_patches_to_elf(tmp.name, patch_lines)
-
-    if os.path.getsize(tmp.name) != record.data_length:
-        print('Error: Patched ELF size changed; cannot apply in-place')
-        return 1
-
-    with open(args.iso, 'r+b') as iso_fp, open(tmp.name, 'rb') as fp:
-        iso_fp.seek(record.extent_location() * block_size)
-        iso_fp.write(fp.read())
-    print('[INFO] ISO patched successfully')
+    _apply_patches_to_elf(args.elf, patch_lines)
+    print('[INFO] ELF patched successfully')
     return 0
 
 

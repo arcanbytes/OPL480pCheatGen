@@ -79,6 +79,14 @@ python -m opl480pcheatgen.patchiso Game.iso --force-240p
 The optional flags are the same as above, except `--preview-only` and
 `--mastercode` which are not used when patching an ISO.
 
+### Patch an ELF file
+
+For quick testing you may patch an ELF file directly:
+
+```bash
+python -m opl480pcheatgen.patchelf game.elf --pal60 --dy 32
+```
+
 ---
 
 ## 🎮 Working Patches Examples
