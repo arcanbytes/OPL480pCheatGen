@@ -16,6 +16,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument('--mastercode', help='Manual mastercode override', metavar='CODE')
     p.add_argument('--preview-only', dest='preview_only', action='store_true',
                    help='Only generate .cht content to stdout, do not write any files')
+    p.add_argument('--patchup', dest='patchup', action='store_true',
+                   help='Patch ISO/ELF in place instead of creating .cht')
     p.add_argument('--no-interlace-patch', dest='interlace_patch', action='store_false',
                    help='Disable No-Interlace patch (enabled by default)')
     p.add_argument('--force-240p', dest='force_240p', action='store_true',
@@ -50,6 +52,36 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"[INFO] OPL480pCheatGen starting on {args.input}")
+    if args.patchup:
+        from .patcher import patch_iso, patch_elf
+
+        if args.input.lower().endswith('.iso'):
+            return patch_iso(
+                args.input,
+                elfpath=args.elfpath,
+                interlace_patch=args.interlace_patch,
+                force_240p=args.force_240p,
+                pal60=args.pal60,
+                dy=args.dy,
+                aggressive=args.aggressive,
+                debug_aggr=args.debug_aggr,
+                force_aggr_skip=args.force_aggr_skip,
+                inject_hook=args.inject_hook,
+                inject_handler=args.inject_handler,
+            )
+        return patch_elf(
+            args.input,
+            interlace_patch=args.interlace_patch,
+            force_240p=args.force_240p,
+            pal60=args.pal60,
+            dy=args.dy,
+            aggressive=args.aggressive,
+            debug_aggr=args.debug_aggr,
+            force_aggr_skip=args.force_aggr_skip,
+            inject_hook=args.inject_hook,
+            inject_handler=args.inject_handler,
+        )
+
     if args.input.lower().endswith('.iso'):
         elf, base = extract_from_iso(args.input, args.elfpath)
         cheats, game_id, title = extract_patches(

@@ -68,24 +68,17 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only
 --mastercode "CODE"   # Manually override mastercode
 ```
 
-### Patch ISO directly
+### Patch ISO or ELF directly
 
-You can also patch the ISO itself without generating a `.cht` file:
+You can also modify the game files in place using the `--patchup` flag:
 
 ```bash
-python -m opl480pcheatgen.patchiso Game.iso --force-240p
+OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --patchup --force-240p
+OPL480pCheatGen.exe game.elf --patchup --pal60 --dy 32
 ```
 
 The optional flags are the same as above, except `--preview-only` and
-`--mastercode` which are not used when patching an ISO.
-
-### Patch an ELF file
-
-For quick testing you may patch an ELF file directly:
-
-```bash
-python -m opl480pcheatgen.patchelf game.elf --pal60 --dy 32
-```
+`--mastercode` which are not used when patching.
 
 ---
 

@@ -3,37 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import os
-import struct
 import sys
 
-from elftools.elf.elffile import ELFFile
-
-from .patches import extract_patches
-
-
-def _apply_patches_to_elf(path: str, codes: list[tuple[int, int]]):
-    """Apply cheat codes directly to the ELF binary."""
-    with open(path, 'rb') as f:
-        elf = ELFFile(f)
-        segs = [
-            (seg['p_vaddr'], seg['p_offset'], seg['p_filesz'])
-            for seg in elf.iter_segments()
-            if seg['p_type'] == 'PT_LOAD'
-        ]
-    with open(path, 'r+b') as f:
-        for addr, val in codes:
-            if addr >> 24 != 0x20:
-                continue
-            a = addr & 0x00FFFFFF
-            for base, off, size in segs:
-                if base <= a < base + size:
-                    f.seek(off + (a - base))
-                    # PS2 executables are little-endian
-                    f.write(struct.pack('<I', val))
-                    break
-            else:
-                print(f"[WARN] Address 0x{a:08X} not within ELF sections")
+from .patcher import patch_elf
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -70,26 +42,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.dy is not None and not (-100 <= args.dy <= 100):
         print('Error: --dy must be between -100 and 100.')
         return 1
-
-    print(f"[INFO] Patching ELF {args.elf}")
-    cheats, _gid, _title = extract_patches(
+    return patch_elf(
         args.elf,
         interlace_patch=args.interlace_patch,
         force_240p=args.force_240p,
         pal60=args.pal60,
-        new_dy=args.dy,
+        dy=args.dy,
         aggressive=args.aggressive,
         debug_aggr=args.debug_aggr,
         force_aggr_skip=args.force_aggr_skip,
         inject_hook=args.inject_hook,
         inject_handler=args.inject_handler,
     )
-    patch_lines = []
-    for _hdr, codes in cheats[1:]:
-        patch_lines.extend(codes)
-    _apply_patches_to_elf(args.elf, patch_lines)
-    print('[INFO] ELF patched successfully')
-    return 0
 
 
 if __name__ == '__main__':  # pragma: no cover
