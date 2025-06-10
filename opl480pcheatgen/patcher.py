@@ -26,6 +26,7 @@ def _apply_codes_to_elf(path: str, codes: list[tuple[int, int]]):
             for seg in elf.iter_segments()
             if seg['p_type'] == 'PT_LOAD'
         ]
+        endian = '<' if elf.little_endian else '>'
     with open(path, 'r+b') as f:
         for addr, val in codes:
             if addr >> 24 != 0x20:
@@ -34,7 +35,7 @@ def _apply_codes_to_elf(path: str, codes: list[tuple[int, int]]):
             for base, off, size in segments:
                 if base <= a < base + size:
                     f.seek(off + (a - base))
-                    f.write(struct.pack('<I', val))
+                    f.write(struct.pack(endian + 'I', val))
                     break
             else:
                 print(f"[WARN] Address 0x{a:08X} not within ELF sections")

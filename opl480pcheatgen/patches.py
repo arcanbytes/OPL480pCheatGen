@@ -9,11 +9,17 @@ import sys
 from typing import List, Tuple
 
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN
+from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN, CS_MODE_LITTLE_ENDIAN
 from capstone.mips import MIPS_OP_MEM
 
 from .helpers import find_pattern, fetch_mastercode, parse_elf_strings, extract_boot_id_from_iso
-from .aggressive import DISPLAY1_ADDR, DISPLAY2_ADDR, generate_display_patch, find_sd
+from .aggressive import (
+    DISPLAY1_ADDR,
+    DISPLAY2_ADDR,
+    generate_display_patch,
+    scan_sd,
+    _sd,
+)
 
 SCEGSRESETGRAPH_SIG = bytes([
     0xB0, 0xFF, 0xBD, 0x27, 0x00, 0x24, 0x04, 0x00,
@@ -32,6 +38,13 @@ SCEGSPUTDISPENV_SIG = bytes([
 
 CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
 CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
+
+VSYNC_HANDLER_SIG = bytes([
+    0x00, 0x12, 0x02, 0x3C, 0x00, 0x10, 0x42, 0xDC,
+    0x7A, 0x13, 0x02, 0x00, 0x01, 0x00, 0x42, 0x30,
+    0x06, 0x00, 0x40, 0x14, 0x00, 0x00, 0x00, 0x00,
+    0x0F, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x42,
+])
 
 ELF_MODE_PATTERNS = [
     b'480p',
@@ -176,7 +189,9 @@ def extract_patches(
 
     with open(elf_path, 'rb') as f:
         elf = ELFFile(f)
-        md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + CS_MODE_BIG_ENDIAN)
+        endian_mode = CS_MODE_LITTLE_ENDIAN if elf.little_endian else CS_MODE_BIG_ENDIAN
+        endian = '<' if elf.little_endian else '>'
+        md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + endian_mode)
         md.detail = True
         for seg in elf.iter_segments():
             if seg['p_type'] != 'PT_LOAD':
@@ -192,14 +207,15 @@ def extract_patches(
             if aggressive or debug_aggr:
                 for logline in dbg:
                     print(logline)
-            if aggressive or debug_aggr:
-                aggr_hits.extend(find_sd(insns, include_all=debug_aggr))
+                endian = '<' if elf.little_endian else '>'
+                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR, endian))
+                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR, endian))
 
         if aggressive or debug_aggr:
             print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
-            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
-                prev_name = prev_ins.mnemonic if prev_ins else 'None'
-                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev: {prev_name}")
+            for addr, b, reg, prev_addr, prev_bytes, _prev in aggr_hits:
+                prev_name = f"0x{_prev:08X}" if _prev is not None else 'None'
+                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev opcode: {prev_name}")
 
         dy_patch = None
         if new_dy is not None:
@@ -225,10 +241,9 @@ def extract_patches(
                 if off >= 0:
                     print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
                     from_off = off - 16
-                    orig_inst = struct.unpack("<I", data[from_off + 4:from_off + 8])[0]
+                    orig_inst = struct.unpack(endian + "I", data[from_off + 4:from_off + 8])[0]
                     hook_addr = seg_base + from_off + 4
-                    # ps2force480p stores handler 0xA8 bytes after the clobber string
-                    patch_addr = (clobber_addr + 0xA8) if clobber_addr else seg_base + 0x100
+                    patch_addr = clobber_addr if clobber_addr else seg_base + 0x100
                     j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                     hook_patch = [((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)]
                     ret_addr = seg_base + from_off + 12
@@ -251,20 +266,25 @@ def extract_patches(
             patch_base = clobber2 if clobber2 is not None else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
             patch_lines = []
             offset = 0
-            for addr, b, reg, prev_addr, prev_bytes, prev_ins in aggr_hits:
+            for addr, b, reg, prev_addr, prev_bytes, prev_word in aggr_hits:
                 if prev_addr is None:
                     print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
                     continue
-                ret_addr = addr + 8
-                delay_opcode = struct.unpack('>I', prev_bytes)[0]
-                if prev_ins.mnemonic == 'beq' and len(prev_ins.operands) == 3:
-                    if prev_ins.operands[0].reg == 0 and prev_ins.operands[1].reg == 0:
-                        off = prev_ins.operands[2].imm
-                        if off & 0x8000:
-                            off |= -0x10000
-                        ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
-                        delay_opcode = 0
-                elif prev_ins.mnemonic in ("bgez", "bgezal", "bltz", "bltzal", "bgtz", "blez", "bne"):
+                ret_addr = addr + 4
+                delay_opcode = struct.unpack(endian + 'I', prev_bytes)[0]
+                use_store = True
+                store_insn = _sd(6 if reg == 5 else 5, 29, -8)
+                opr = (prev_word >> 26) & 0x3F
+                rs = (prev_word >> 21) & 0x1F
+                rt = (prev_word >> 16) & 0x1F
+                if opr == 4 and rs == 0 and rt == 0:
+                    off = prev_word & 0xFFFF
+                    if off & 0x8000:
+                        off |= -0x10000
+                    ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
+                    delay_opcode = store_insn
+                    use_store = False
+                elif opr in (1, 7, 6, 5):
                     if not force_aggr_skip:
                         continue
                 patch_addr = patch_base + offset
@@ -272,9 +292,9 @@ def extract_patches(
                 patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
                 if len(b) == 4:
-                    orig = struct.unpack('>I', b)[0]
-                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr))
-                offset += 7 * 4
+                    orig = struct.unpack(endian + 'I', b)[0]
+                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr, use_store))
+                offset += (7 if use_store else 6) * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
 
         manual_patch = None
@@ -289,6 +309,30 @@ def extract_patches(
             manual_lines.append(((0x20 << 24) | (inject_hook & 0x00FFFFFF), 0x08000000 | (inject_handler // 4)))
             manual_lines.append(((0x20 << 24) | ((inject_hook + 4) & 0x00FFFFFF), 0x00000000))
             manual_patch = ("//Aggressive DISPLAY patch", manual_lines)
+
+        persona_patch = None
+        for seg in elf.iter_segments():
+            if seg['p_type'] != 'PT_LOAD':
+                continue
+            data, seg_base = seg.data(), seg['p_vaddr']
+            off = find_pattern(data, VSYNC_HANDLER_SIG)
+            if off >= 0:
+                patch_loc = seg_base + off
+                print(f"[INFO] Persona 3/4 VSync handler detected at 0x{patch_loc:08X}")
+                vals = [
+                    0x00000000, 0x00000000, 0x8C820000, 0x38420001, 0xAC820000,
+                    0x000217FC, 0x000217FF, 0x0000000F, 0x42000038, 0x03E00008,
+                    0x00000000,
+                ]
+                data_loc = patch_loc + len(vals) * 4
+                vals[0] = 0x3C040000 | (data_loc >> 16)
+                vals[1] = 0x34840000 | (data_loc & 0xFFFF)
+                vals.append(0x00000001)
+                persona_patch = (
+                    "//Persona 3/4 frame rate fix",
+                    [((0x20 << 24) | ((patch_loc + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)],
+                )
+                break
 
     print("[INFO] Defaulting to 480i @ 640×448 if not overridden.")
     if default_mode:
@@ -310,6 +354,8 @@ def extract_patches(
         cheats.append(manual_patch)
     elif aggr_patch:
         cheats.append(aggr_patch)
+    if persona_patch:
+        cheats.append(persona_patch)
 
     if all_d2:
         cheats.append(("//NOP DISPLAY2 writes", all_d2))
@@ -342,13 +388,12 @@ def extract_patches(
     elif region == 'PAL':
         print("[INFO] Skipping PAL<->NTSC switch.")
 
-    # Mirror ps2force480p's handler constants
     table_vals = [
         0x4480B800, 0x4480C000, 0x4480C800, 0x4480D000,
         0x4480D800, 0x4480E000, 0x4480E800, 0x4480F000,
         0x4480F800, 0x46010018,
     ]
-    tbl_addr = 0x00100100
+    tbl_addr = 0x00100180
     tbl_codes = [((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
                  for i, v in enumerate(table_vals)]
     cheats.append(("//Init constants", tbl_codes))
