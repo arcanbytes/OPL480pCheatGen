@@ -29,7 +29,8 @@ def _apply_patches_to_elf(path: str, codes: list[tuple[int, int]]):
             for base, off, size in segs:
                 if base <= a < base + size:
                     f.seek(off + (a - base))
-                    f.write(struct.pack('>I', val))
+                    # PS2 executables are little-endian
+                    f.write(struct.pack('<I', val))
                     break
             else:
                 print(f"[WARN] Address 0x{a:08X} not within ELF sections")

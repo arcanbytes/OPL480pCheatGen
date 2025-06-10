@@ -208,10 +208,13 @@ def extract_patches(
                 if seg['p_type'] != 'PT_LOAD':
                     continue
                 data, seg_base = seg.data(), seg['p_vaddr']
-                pos = data.find(CLOBBER_STR1)
-                if pos >= 0:
-                    clobber_addr = seg_base + pos
-                    print(f"[INFO] Found clobber string at 0x{clobber_addr:08X}")
+                for pat in (CLOBBER_STR1, CLOBBER_STR2):
+                    pos = data.find(pat)
+                    if pos >= 0:
+                        clobber_addr = seg_base + pos
+                        print(f"[INFO] Found clobber string at 0x{clobber_addr:08X}")
+                        break
+                if clobber_addr is not None:
                     break
 
             for seg in elf.iter_segments():
@@ -222,9 +225,10 @@ def extract_patches(
                 if off >= 0:
                     print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
                     from_off = off - 16
-                    orig_inst = struct.unpack(">I", data[from_off + 4:from_off + 8])[0]
+                    orig_inst = struct.unpack("<I", data[from_off + 4:from_off + 8])[0]
                     hook_addr = seg_base + from_off + 4
-                    patch_addr = clobber_addr if clobber_addr else seg_base + 0x100
+                    # ps2force480p stores handler 0xA8 bytes after the clobber string
+                    patch_addr = (clobber_addr + 0xA8) if clobber_addr else seg_base + 0x100
                     j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                     hook_patch = [((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)]
                     ret_addr = seg_base + from_off + 12
@@ -337,6 +341,17 @@ def extract_patches(
                 print("[WARN] Original PAL refresh constant not found; skipping region switch.")
     elif region == 'PAL':
         print("[INFO] Skipping PAL<->NTSC switch.")
+
+    # Mirror ps2force480p's handler constants
+    table_vals = [
+        0x4480B800, 0x4480C000, 0x4480C800, 0x4480D000,
+        0x4480D800, 0x4480E000, 0x4480E800, 0x4480F000,
+        0x4480F800, 0x46010018,
+    ]
+    tbl_addr = 0x00100100
+    tbl_codes = [((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
+                 for i, v in enumerate(table_vals)]
+    cheats.append(("//Init constants", tbl_codes))
 
     return cheats, base, title
 
