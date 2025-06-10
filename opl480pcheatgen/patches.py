@@ -190,6 +190,7 @@ def extract_patches(
     with open(elf_path, 'rb') as f:
         elf = ELFFile(f)
         endian_mode = CS_MODE_LITTLE_ENDIAN if elf.little_endian else CS_MODE_BIG_ENDIAN
+        endian = '<' if elf.little_endian else '>'
         md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + endian_mode)
         md.detail = True
         for seg in elf.iter_segments():
@@ -206,8 +207,9 @@ def extract_patches(
             if aggressive or debug_aggr:
                 for logline in dbg:
                     print(logline)
-                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR))
-                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR))
+                endian = '<' if elf.little_endian else '>'
+                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR, endian))
+                aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR, endian))
 
         if aggressive or debug_aggr:
             print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
@@ -239,7 +241,7 @@ def extract_patches(
                 if off >= 0:
                     print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
                     from_off = off - 16
-                    orig_inst = struct.unpack("<I", data[from_off + 4:from_off + 8])[0]
+                    orig_inst = struct.unpack(endian + "I", data[from_off + 4:from_off + 8])[0]
                     hook_addr = seg_base + from_off + 4
                     patch_addr = clobber_addr if clobber_addr else seg_base + 0x100
                     j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
@@ -269,7 +271,7 @@ def extract_patches(
                     print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
                     continue
                 ret_addr = addr + 4
-                delay_opcode = struct.unpack('<I', prev_bytes)[0]
+                delay_opcode = struct.unpack(endian + 'I', prev_bytes)[0]
                 use_store = True
                 store_insn = _sd(6 if reg == 5 else 5, 29, -8)
                 opr = (prev_word >> 26) & 0x3F
@@ -290,7 +292,7 @@ def extract_patches(
                 patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
                 if len(b) == 4:
-                    orig = struct.unpack('<I', b)[0]
+                    orig = struct.unpack(endian + 'I', b)[0]
                     patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr, use_store))
                 offset += (7 if use_store else 6) * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)

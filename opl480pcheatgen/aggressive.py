@@ -113,15 +113,22 @@ def find_sd(insns, include_all: bool = False):
     return matches
 
 
-def scan_sd(data: bytes, base_addr: int, target: int) -> List[tuple[int, bytes, int, int | None, bytes | None, int | None]]:
+def scan_sd(
+    data: bytes,
+    base_addr: int,
+    target: int,
+    endian: str,
+) -> List[tuple[int, bytes, int, int | None, bytes | None, int | None]]:
     """Raw search for ``sd`` instructions storing to *target* address."""
     matches = []
     regs = [0] * 32
     for off in range(0, len(data) - 4, 4):
-        word = struct.unpack_from('<I', data, off)[0]
+        word = struct.unpack_from(endian + 'I', data, off)[0]
         opr = (word >> 26) & 0x3F
         rs = (word >> 21) & 0x1F
         rt = (word >> 16) & 0x1F
+        rd = (word >> 11) & 0x1F
+        funct = word & 0x3F
         imm = word & 0xFFFF
         if opr == 0x0F:  # lui
             regs[rt] = (imm << 16) & 0xFFFFFFFF
@@ -131,13 +138,22 @@ def scan_sd(data: bytes, base_addr: int, target: int) -> List[tuple[int, bytes, 
             regs[rt] = (regs[rs] + imm) & 0xFFFFFFFF
         elif opr == 0x0D:  # ori
             regs[rt] = regs[rs] | imm
+        elif opr == 0x00 and funct in (0x25, 0x21, 0x2D):  # or/addu/daddu
+            if funct == 0x25:
+                regs[rd] = regs[rs] | regs[rt]
+            else:
+                regs[rd] = (regs[rs] + regs[rt]) & 0xFFFFFFFF
         elif opr == 0x3F:  # sd
             if imm & 0x8000:
                 imm |= -0x10000
             if (regs[rs] + imm) & 0xFFFFFFFF == target:
                 prev_off = off - 4
                 prev_bytes = data[prev_off:prev_off + 4] if prev_off >= 0 else None
-                prev_word = struct.unpack_from('<I', data, prev_off)[0] if prev_off >= 0 else None
+                prev_word = (
+                    struct.unpack_from(endian + 'I', data, prev_off)[0]
+                    if prev_off >= 0
+                    else None
+                )
                 matches.append(
                     (
                         base_addr + off,
