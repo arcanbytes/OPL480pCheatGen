@@ -4,6 +4,8 @@ import argparse
 import os
 import sys
 
+from . import __version__
+
 from .helpers import extract_from_iso, write_cht, format_cht_text
 from .patches import extract_patches
 
@@ -95,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --dy must be between -100 and 100.")
         return 1
 
-    print(f"[INFO] OPL480pCheatGen starting on {args.input}")
+    print(f"[INFO] OPL480pCheatGen v{__version__} starting on {args.input}")
     if args.patchup:
         from .patcher import patch_iso, patch_elf
 
