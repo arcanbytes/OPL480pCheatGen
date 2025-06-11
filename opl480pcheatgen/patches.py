@@ -9,10 +9,21 @@ import sys
 from typing import List, Tuple
 
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_MIPS, CS_MODE_MIPS64, CS_MODE_BIG_ENDIAN, CS_MODE_LITTLE_ENDIAN
+from capstone import (
+    Cs,
+    CS_ARCH_MIPS,
+    CS_MODE_MIPS64,
+    CS_MODE_BIG_ENDIAN,
+    CS_MODE_LITTLE_ENDIAN,
+)
 from capstone.mips import MIPS_OP_MEM
 
-from .helpers import find_pattern, fetch_mastercode, parse_elf_strings, extract_boot_id_from_iso
+from .helpers import (
+    find_pattern,
+    fetch_mastercode,
+    parse_elf_strings,
+    extract_boot_id_from_iso,
+)
 from .aggressive import (
     DISPLAY1_ADDR,
     DISPLAY2_ADDR,
@@ -21,39 +32,132 @@ from .aggressive import (
     _sd,
 )
 
-SCEGSRESETGRAPH_SIG = bytes([
-    0xB0, 0xFF, 0xBD, 0x27, 0x00, 0x24, 0x04, 0x00,
-    0x30, 0x00, 0xB3, 0xFF, 0x00, 0x2C, 0x05, 0x00,
-    0x20, 0x00, 0xB2, 0xFF, 0x00, 0x34, 0x06, 0x00,
-    0x10, 0x00, 0xB1, 0xFF, 0x00, 0x3C, 0x07, 0x00,
-    0x40, 0x00, 0xBF, 0xFF, 0x03, 0x24, 0x04, 0x00,
-    0x00, 0x00, 0xB0, 0xFF, 0x03, 0x8C, 0x05, 0x00,
-    0x03, 0x94, 0x06, 0x00,
-])
+SCEGSRESETGRAPH_SIG = bytes(
+    [
+        0xB0,
+        0xFF,
+        0xBD,
+        0x27,
+        0x00,
+        0x24,
+        0x04,
+        0x00,
+        0x30,
+        0x00,
+        0xB3,
+        0xFF,
+        0x00,
+        0x2C,
+        0x05,
+        0x00,
+        0x20,
+        0x00,
+        0xB2,
+        0xFF,
+        0x00,
+        0x34,
+        0x06,
+        0x00,
+        0x10,
+        0x00,
+        0xB1,
+        0xFF,
+        0x00,
+        0x3C,
+        0x07,
+        0x00,
+        0x40,
+        0x00,
+        0xBF,
+        0xFF,
+        0x03,
+        0x24,
+        0x04,
+        0x00,
+        0x00,
+        0x00,
+        0xB0,
+        0xFF,
+        0x03,
+        0x8C,
+        0x05,
+        0x00,
+        0x03,
+        0x94,
+        0x06,
+        0x00,
+    ]
+)
 
-SCEGSPUTDISPENV_SIG = bytes([
-    0x2D, 0x80, 0x80, 0x00, 0x06, 0x00, 0x43, 0x84,
-    0x01, 0x00, 0x02, 0x24, 0x11, 0x00, 0x62, 0x14,
-])
+SCEGSPUTDISPENV_SIG = bytes(
+    [
+        0x2D,
+        0x80,
+        0x80,
+        0x00,
+        0x06,
+        0x00,
+        0x43,
+        0x84,
+        0x01,
+        0x00,
+        0x02,
+        0x24,
+        0x11,
+        0x00,
+        0x62,
+        0x14,
+    ]
+)
 
 CLOBBER_STR1 = b"sceGsExecStoreImage: Enough data does not reach VIF1"
 CLOBBER_STR2 = b"sceGsExecStoreImage: DMA Ch.1 does not terminate"
 
-VSYNC_HANDLER_SIG = bytes([
-    0x00, 0x12, 0x02, 0x3C, 0x00, 0x10, 0x42, 0xDC,
-    0x7A, 0x13, 0x02, 0x00, 0x01, 0x00, 0x42, 0x30,
-    0x06, 0x00, 0x40, 0x14, 0x00, 0x00, 0x00, 0x00,
-    0x0F, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x42,
-])
+VSYNC_HANDLER_SIG = bytes(
+    [
+        0x00,
+        0x12,
+        0x02,
+        0x3C,
+        0x00,
+        0x10,
+        0x42,
+        0xDC,
+        0x7A,
+        0x13,
+        0x02,
+        0x00,
+        0x01,
+        0x00,
+        0x42,
+        0x30,
+        0x06,
+        0x00,
+        0x40,
+        0x14,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x0F,
+        0x00,
+        0x00,
+        0x00,
+        0x38,
+        0x00,
+        0x00,
+        0x42,
+    ]
+)
 
 ELF_MODE_PATTERNS = [
-    b'480p',
-    b'240p',
-    b'progressive',
-    b'interlaced',
-    b'60HZ',
-    b'PAL60',
-    b'60 HZ',
+    b"480p",
+    b"240p",
+    b"progressive",
+    b"interlaced",
+    b"60HZ",
+    b"PAL60",
+    b"60 HZ",
 ]
 
 
@@ -88,9 +192,15 @@ def analyze_display(insns, interlace_patch: bool = False, debug: bool = False):
     return matches, details
 
 
-def generate_putdispenv_patch(dy_value: int, base_addr: int, orig_inst: int, patch_offset: int = 0x100,
-                               return_offset: int = 12, return_addr: int | None = None,
-                               patch_addr: int | None = None):
+def generate_putdispenv_patch(
+    dy_value: int,
+    base_addr: int,
+    orig_inst: int,
+    patch_offset: int = 0x100,
+    return_offset: int = 12,
+    return_addr: int | None = None,
+    patch_addr: int | None = None,
+):
     """Return cheat codes overriding DY via ``sceGsPutDispEnv``."""
     fv = patch_addr if patch_addr is not None else base_addr + patch_offset
     ret = return_addr if return_addr is not None else fv + return_offset
@@ -106,7 +216,9 @@ def generate_putdispenv_patch(dy_value: int, base_addr: int, orig_inst: int, pat
         0x08000000 | (ret // 4),
         0xAC900018,
     ]
-    return [((0x20 << 24) | ((fv + i * 4) & 0x00FFFFFF), val) for i, val in enumerate(vals)]
+    return [
+        ((0x20 << 24) | ((fv + i * 4) & 0x00FFFFFF), val) for i, val in enumerate(vals)
+    ]
 
 
 def extract_patches(
@@ -127,15 +239,17 @@ def extract_patches(
     fname = os.path.basename(elf_path)
     if base_override:
         base = base_override
-    elif re.match(r'^[A-Z]{4}_\d{3}\.\d{2}$', fname):
+    elif re.match(r"^[A-Z]{4}_\d{3}\.\d{2}$", fname):
         base = fname
     else:
         base = os.path.splitext(fname)[0]
 
-    title, mc = (manual_mc and (f'"{base} /ID {base}"', manual_mc)) or fetch_mastercode(base)
+    title, mc = (manual_mc and (f'"{base} /ID {base}"', manual_mc)) or fetch_mastercode(
+        base
+    )
 
     if title:
-        title = title.replace('\ufeff', '').replace("“", '"').replace("”", '"').strip()
+        title = title.replace("\ufeff", "").replace("“", '"').replace("”", '"').strip()
     if title and not (title.startswith('"') and title.endswith('"')):
         title = '"' + title.strip('"') + '"'
 
@@ -145,7 +259,7 @@ def extract_patches(
         if elf_path.lower().endswith(".elf") and os.path.exists(elf_path):
             iso_path_guess = None
             for p in sys.argv:
-                if p.lower().endswith('.iso') and os.path.exists(p):
+                if p.lower().endswith(".iso") and os.path.exists(p):
                     iso_path_guess = p
                     break
             if iso_path_guess:
@@ -162,9 +276,9 @@ def extract_patches(
     modes = parse_elf_strings(elf_path, ELF_MODE_PATTERNS)
     if modes:
         print(f"Supported modes in ELF: {', '.join(modes)}")
-    has_60hz = any(m.lower() in ('60hz', 'pal60', '60 hz') for m in modes)
-    prefix = base.split('_')[0]
-    region = 'PAL' if prefix in ('SLES', 'SCES') else 'NTSC'
+    has_60hz = any(m.lower() in ("60hz", "pal60", "60 hz") for m in modes)
+    prefix = base.split("_")[0]
+    region = "PAL" if prefix in ("SLES", "SCES") else "NTSC"
     print(f"Region: {region}")
 
     cheats = [(title, mc)]
@@ -187,16 +301,16 @@ def extract_patches(
     if not os.path.isfile(elf_path):
         sys.exit(f"Error: File not found: {elf_path}")
 
-    with open(elf_path, 'rb') as f:
+    with open(elf_path, "rb") as f:
         elf = ELFFile(f)
         endian_mode = CS_MODE_LITTLE_ENDIAN if elf.little_endian else CS_MODE_BIG_ENDIAN
-        endian = '<' if elf.little_endian else '>'
+        endian = "<" if elf.little_endian else ">"
         md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS64 + endian_mode)
         md.detail = True
         for seg in elf.iter_segments():
-            if seg['p_type'] != 'PT_LOAD':
+            if seg["p_type"] != "PT_LOAD":
                 continue
-            data, vaddr = seg.data(), seg['p_vaddr']
+            data, vaddr = seg.data(), seg["p_vaddr"]
             if reset is None:
                 off = find_pattern(data, SCEGSRESETGRAPH_SIG)
                 if off >= 0:
@@ -207,23 +321,27 @@ def extract_patches(
             if aggressive or debug_aggr:
                 for logline in dbg:
                     print(logline)
-                endian = '<' if elf.little_endian else '>'
+                endian = "<" if elf.little_endian else ">"
                 aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR, endian))
                 aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR, endian))
 
         if aggressive or debug_aggr:
-            print(f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found")
+            print(
+                f"[DEBUG] Aggressive hits: {len(aggr_hits)} potential display writes found"
+            )
             for addr, b, reg, prev_addr, prev_bytes, _prev in aggr_hits:
-                prev_name = f"0x{_prev:08X}" if _prev is not None else 'None'
-                print(f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev opcode: {prev_name}")
+                prev_name = f"0x{_prev:08X}" if _prev is not None else "None"
+                print(
+                    f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev opcode: {prev_name}"
+                )
 
         dy_patch = None
         if new_dy is not None:
             clobber_addr = None
             for seg in elf.iter_segments():
-                if seg['p_type'] != 'PT_LOAD':
+                if seg["p_type"] != "PT_LOAD":
                     continue
-                data, seg_base = seg.data(), seg['p_vaddr']
+                data, seg_base = seg.data(), seg["p_vaddr"]
                 for pat in (CLOBBER_STR1, CLOBBER_STR2):
                     pos = data.find(pat)
                     if pos >= 0:
@@ -234,20 +352,30 @@ def extract_patches(
                     break
 
             for seg in elf.iter_segments():
-                if seg['p_type'] != 'PT_LOAD':
+                if seg["p_type"] != "PT_LOAD":
                     continue
-                data, seg_base = seg.data(), seg['p_vaddr']
+                data, seg_base = seg.data(), seg["p_vaddr"]
                 off = find_pattern(data, SCEGSPUTDISPENV_SIG)
                 if off >= 0:
-                    print(f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}")
+                    print(
+                        f"[INFO] DY override via sceGsPutDispEnv detected at 0x{seg_base+off:08X}"
+                    )
                     from_off = off - 16
-                    orig_inst = struct.unpack(endian + "I", data[from_off + 4:from_off + 8])[0]
+                    orig_inst = struct.unpack(
+                        endian + "I", data[from_off + 4 : from_off + 8]
+                    )[0]
                     hook_addr = seg_base + from_off + 4
                     patch_addr = clobber_addr if clobber_addr else seg_base + 0x100
                     j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
                     hook_patch = [((0x20 << 24) | (hook_addr & 0x00FFFFFF), j_code)]
                     ret_addr = seg_base + from_off + 12
-                    dy_vals = generate_putdispenv_patch(new_dy, seg_base, orig_inst, return_addr=ret_addr, patch_addr=patch_addr)
+                    dy_vals = generate_putdispenv_patch(
+                        new_dy,
+                        seg_base,
+                        orig_inst,
+                        return_addr=ret_addr,
+                        patch_addr=patch_addr,
+                    )
                     dy_patch = (f"//Vertical Offset DY={new_dy}", hook_patch + dy_vals)
                     break
 
@@ -255,23 +383,29 @@ def extract_patches(
         if aggressive and aggr_hits:
             clobber2 = None
             for seg in elf.iter_segments():
-                if seg['p_type'] != 'PT_LOAD':
+                if seg["p_type"] != "PT_LOAD":
                     continue
-                data, seg_base = seg.data(), seg['p_vaddr']
+                data, seg_base = seg.data(), seg["p_vaddr"]
                 pos = data.find(CLOBBER_STR2)
                 if pos >= 0:
                     clobber2 = seg_base + pos
                     print(f"[INFO] Found clobber string #2 at 0x{clobber2:08X}")
                     break
-            patch_base = clobber2 if clobber2 is not None else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
+            patch_base = (
+                clobber2
+                if clobber2 is not None
+                else (aggr_hits[0][0] & 0xFFFF0000) + 0x100
+            )
             patch_lines = []
             offset = 0
             for addr, b, reg, prev_addr, prev_bytes, prev_word in aggr_hits:
                 if prev_addr is None:
-                    print(f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction.")
+                    print(
+                        f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping patch generation for this instruction."
+                    )
                     continue
                 ret_addr = addr + 4
-                delay_opcode = struct.unpack(endian + 'I', prev_bytes)[0]
+                delay_opcode = struct.unpack(endian + "I", prev_bytes)[0]
                 use_store = True
                 store_insn = _sd(6 if reg == 5 else 5, 29, -8)
                 opr = (prev_word >> 26) & 0x3F
@@ -292,8 +426,12 @@ def extract_patches(
                 patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
                 patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
                 if len(b) == 4:
-                    orig = struct.unpack(endian + 'I', b)[0]
-                    patch_lines.extend(generate_display_patch(orig, reg, patch_addr, ret_addr, use_store))
+                    orig = struct.unpack(endian + "I", b)[0]
+                    patch_lines.extend(
+                        generate_display_patch(
+                            orig, reg, patch_addr, ret_addr, use_store
+                        )
+                    )
                 offset += (7 if use_store else 6) * 4
             aggr_patch = ("//Aggressive DISPLAY patch", patch_lines)
 
@@ -301,27 +439,54 @@ def extract_patches(
         if inject_hook and inject_handler:
             print("[INFO] Injecting fixed aggressive patch manually.")
             vals = [
-                0x3C020010, 0x344226DC, 0x8C820000, 0x38420001, 0xAC820000,
-                0x3C021700, 0x3442FFFC, 0x3C030000, 0x3463000F, 0xAC430038,
-                0x0800E003, 0x00000000,
+                0x3C020010,
+                0x344226DC,
+                0x8C820000,
+                0x38420001,
+                0xAC820000,
+                0x3C021700,
+                0x3442FFFC,
+                0x3C030000,
+                0x3463000F,
+                0xAC430038,
+                0x0800E003,
+                0x00000000,
             ]
-            manual_lines = [((0x20 << 24) | ((inject_handler + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
-            manual_lines.append(((0x20 << 24) | (inject_hook & 0x00FFFFFF), 0x08000000 | (inject_handler // 4)))
-            manual_lines.append(((0x20 << 24) | ((inject_hook + 4) & 0x00FFFFFF), 0x00000000))
+            manual_lines = [
+                ((0x20 << 24) | ((inject_handler + i * 4) & 0x00FFFFFF), v)
+                for i, v in enumerate(vals)
+            ]
+            manual_lines.append(
+                (
+                    (0x20 << 24) | (inject_hook & 0x00FFFFFF),
+                    0x08000000 | (inject_handler // 4),
+                )
+            )
+            manual_lines.append(
+                ((0x20 << 24) | ((inject_hook + 4) & 0x00FFFFFF), 0x00000000)
+            )
             manual_patch = ("//Aggressive DISPLAY patch", manual_lines)
 
         persona_patch = None
         for seg in elf.iter_segments():
-            if seg['p_type'] != 'PT_LOAD':
+            if seg["p_type"] != "PT_LOAD":
                 continue
-            data, seg_base = seg.data(), seg['p_vaddr']
+            data, seg_base = seg.data(), seg["p_vaddr"]
             off = find_pattern(data, VSYNC_HANDLER_SIG)
             if off >= 0:
                 patch_loc = seg_base + off
                 print(f"[INFO] Persona 3/4 VSync handler detected at 0x{patch_loc:08X}")
                 vals = [
-                    0x00000000, 0x00000000, 0x8C820000, 0x38420001, 0xAC820000,
-                    0x000217FC, 0x000217FF, 0x0000000F, 0x42000038, 0x03E00008,
+                    0x00000000,
+                    0x00000000,
+                    0x8C820000,
+                    0x38420001,
+                    0xAC820000,
+                    0x000217FC,
+                    0x000217FF,
+                    0x0000000F,
+                    0x42000038,
+                    0x03E00008,
                     0x00000000,
                 ]
                 data_loc = patch_loc + len(vals) * 4
@@ -330,7 +495,10 @@ def extract_patches(
                 vals.append(0x00000001)
                 persona_patch = (
                     "//Persona 3/4 frame rate fix",
-                    [((0x20 << 24) | ((patch_loc + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)],
+                    [
+                        ((0x20 << 24) | ((patch_loc + i * 4) & 0x00FFFFFF), v)
+                        for i, v in enumerate(vals)
+                    ],
                 )
                 break
 
@@ -340,9 +508,14 @@ def extract_patches(
         print(f"[INFO] Game default: {w0}×{h0} {'interlaced' if i0 else 'progressive'}")
 
     if reset:
-        need_patch = force_240p or not default_mode or (not default_mode[2] and not force_240p)
+        need_patch = (
+            force_240p or not default_mode or (not default_mode[2] and not force_240p)
+        )
         if need_patch:
-            codes = [((0x20 << 24) | ((reset + o * 4) & 0x00FFFFFF), v) for o, v in params.items()]
+            codes = [
+                ((0x20 << 24) | ((reset + o * 4) & 0x00FFFFFF), v)
+                for o, v in params.items()
+            ]
             cheats.append((patch_title, codes))
             print(f"[INFO] Applying {patch_title[2:]}.")
         else:
@@ -361,7 +534,7 @@ def extract_patches(
         cheats.append(("//NOP DISPLAY2 writes", all_d2))
         print(f"[INFO] Found {len(all_d2)} DISPLAY2 writes — patching to NOP.")
 
-    if region == 'PAL' and reset and pal60:
+    if region == "PAL" and reset and pal60:
         if has_60hz:
             print("[INFO] Skipping PAL60 patch (mode already present)")
         else:
@@ -376,27 +549,65 @@ def extract_patches(
                         if a == addr_to_patch:
                             patch_lines[j] = (a, ntsc_val)
                             patched = True
-                            print(f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}")
+                            print(
+                                f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}"
+                            )
                             break
                     if patched:
                         break
                 if not patched:
-                    cheats.append(("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)]))
-                    print(f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}")
+                    cheats.append(
+                        ("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)])
+                    )
+                    print(
+                        f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}"
+                    )
             else:
-                print("[WARN] Original PAL refresh constant not found; skipping region switch.")
-    elif region == 'PAL':
+                print(
+                    "[WARN] Original PAL refresh constant not found; skipping region switch."
+                )
+    elif region == "PAL":
         print("[INFO] Skipping PAL<->NTSC switch.")
 
     table_vals = [
-        0x4480B800, 0x4480C000, 0x4480C800, 0x4480D000,
-        0x4480D800, 0x4480E000, 0x4480E800, 0x4480F000,
-        0x4480F800, 0x46010018,
+        0x4480E000,
+        0x4480E800,
+        0x4480F000,
+        0x4480F800,
+        0x46010018,
+        0x0000040F,
+        0x44C0F800,
+        0x3C020076,
+        0x3C030094,
+        0x24424280,
+        0x24638A00,
+        0x3044000F,
+        0x10800006,
+        0x00000000,
+        0xA0400000,
+        0x24420001,
     ]
     tbl_addr = 0x00100100
-    tbl_codes = [((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
-                 for i, v in enumerate(table_vals)]
-    cheats.append(("//Init constants", tbl_codes))
+    need_tbl_patch = True
+    with open(elf_path, "rb") as f:
+        elf2 = ELFFile(f)
+        endian = "<" if elf2.little_endian else ">"
+        for seg in elf2.iter_segments():
+            if seg["p_type"] != "PT_LOAD":
+                continue
+            base, data = seg["p_vaddr"], seg.data()
+            if base <= tbl_addr < base + len(data):
+                off = tbl_addr - base
+                if off + 4 <= len(data):
+                    val = struct.unpack(endian + "I", data[off : off + 4])[0]
+                    if val != 0:
+                        need_tbl_patch = False
+                break
+    if need_tbl_patch:
+        tbl_codes = [
+            ((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
+            for i, v in enumerate(table_vals)
+        ]
+        cheats.append(("//Init constants", tbl_codes))
 
     return cheats, base, title
-
