@@ -13,7 +13,7 @@ from opl480pcheatgen.patcher import patch_elf
 
 def _extract(name: str, tmp_path: Path) -> Path:
     """Extract 7z archive *name* into *tmp_path* and return root dir."""
-    arch_path = Path(__file__).with_name(name)
+    arch_path = Path(__file__).parent.parent / ".temp" / name
     with py7zr.SevenZipFile(arch_path, mode="r") as zf:
         zf.extractall(path=tmp_path)
     # archive contains a single folder
