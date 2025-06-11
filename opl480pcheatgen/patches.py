@@ -234,8 +234,16 @@ def extract_patches(
     force_aggr_skip: bool = False,
     inject_hook: int | None = None,
     inject_handler: int | None = None,
+    include_init_constants: bool = False,
 ):
-    """Extract patch codes from an ELF file."""
+    """Extract patch codes from an ELF file.
+
+    Parameters
+    ----------
+    include_init_constants
+        Always include the Init constants cheat block even if the values
+        are already present in the ELF.
+    """
     fname = os.path.basename(elf_path)
     if base_override:
         base = base_override
@@ -603,7 +611,8 @@ def extract_patches(
                     if val != 0:
                         need_tbl_patch = False
                 break
-    if need_tbl_patch:
+
+    if need_tbl_patch or include_init_constants:
         tbl_codes = [
             ((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
             for i, v in enumerate(table_vals)
