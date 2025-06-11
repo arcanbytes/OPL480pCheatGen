@@ -611,6 +611,7 @@ def extract_patches(
                     if val != 0:
                         need_tbl_patch = False
                 break
+
     if need_tbl_patch or include_init_constants:
         tbl_codes = [
             ((0x20 << 24) | ((tbl_addr + i * 4) & 0x00FFFFFF), v)
