@@ -16,13 +16,44 @@ except ImportError:  # pragma: no cover
     pycdlib = None
 
 
+def _open_iso(iso_path: str) -> "pycdlib.PyCdlib":
+    """Return a ``PyCdlib`` instance opened on *iso_path*.
+
+    Work around images that report UDF descriptors but only contain a
+    single anchor by retrying without parsing UDF when that error is
+    encountered.
+    """
+    from pycdlib.pycdlibexception import PyCdlibInvalidISO, PyCdlibInvalidInput
+
+    def _open(cls: type[pycdlib.PyCdlib]) -> pycdlib.PyCdlib:
+        iso = cls()
+        iso.open(iso_path)
+        return iso
+
+    try:
+        return _open(pycdlib.PyCdlib)
+    except PyCdlibInvalidInput:
+        raise
+    except PyCdlibInvalidISO as e:
+        if "UDF Anchors" not in str(e):
+            raise
+        class NoUDF(pycdlib.PyCdlib):
+            def _parse_udf_descriptors(self):  # type: ignore[override]
+                # Disable UDF handling on malformed descriptors
+                self._has_udf = False
+
+            def _walk_udf_directories(self, extent_to_inode):  # type: ignore[override]
+                # Skip walking the UDF filesystem entirely
+                return
+        return _open(NoUDF)
+
+
 def extract_boot_id_from_iso(iso_path: str) -> Optional[str]:
     """Return the BOOT2 ID from an ISO image if possible."""
     if not pycdlib:
         return None
-    iso = pycdlib.PyCdlib()
+    iso = _open_iso(iso_path)
     try:
-        iso.open(iso_path)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".cnf") as tmp:
             iso.get_file_from_iso(iso_path='/SYSTEM.CNF;1', local_path=tmp.name)
             with open(tmp.name, 'r', encoding='utf-8', errors='ignore') as f:
@@ -123,9 +154,8 @@ def extract_from_iso(iso_path: str, elf_override: str | None = None) -> Tuple[st
     if not pycdlib:
         raise RuntimeError("pycdlib is required to read ISO images")
     from pycdlib.pycdlibexception import PyCdlibInvalidInput
-    iso = pycdlib.PyCdlib()
     try:
-        iso.open(iso_path)
+        iso = _open_iso(iso_path)
     except PyCdlibInvalidInput:
         print("[ERROR] Not a valid ISO file.")
         sys.exit(1)

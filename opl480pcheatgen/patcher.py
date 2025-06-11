@@ -10,6 +10,7 @@ import tempfile
 from elftools.elf.elffile import ELFFile
 
 from .patches import extract_patches
+from .helpers import _open_iso
 
 try:
     import pycdlib
@@ -115,8 +116,7 @@ def patch_iso(
     if not pycdlib:
         print("pycdlib is required to patch ISO images")
         return 1
-    iso = pycdlib.PyCdlib()
-    iso.open(iso_path)
+    iso = _open_iso(iso_path)
     try:
         boot = _find_boot_path(iso, elfpath)
         record = iso.get_record(iso_path=boot)
