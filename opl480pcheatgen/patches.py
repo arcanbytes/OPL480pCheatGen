@@ -603,9 +603,9 @@ def extract_patches(
         for seg in elf2.iter_segments():
             if seg["p_type"] != "PT_LOAD":
                 continue
-            base, data = seg["p_vaddr"], seg.data()
-            if base <= tbl_addr < base + len(data):
-                off = tbl_addr - base
+            seg_base, data = seg["p_vaddr"], seg.data()
+            if seg_base <= tbl_addr < seg_base + len(data):
+                off = tbl_addr - seg_base
                 if off + 4 <= len(data):
                     val = struct.unpack(endian + "I", data[off : off + 4])[0]
                     if val != 0:

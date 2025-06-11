@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.preview_only:
         print(format_cht_text(cheats))
     else:
-        write_cht(os.path.dirname(__file__), cheats, game_id, title)
+        write_cht(os.getcwd(), cheats, game_id, title)
     return 0
 
 
