@@ -6,10 +6,14 @@ import threading
 import re
 import sys
 
+from opl480pcheatgen import __version__
+
 class OPLCheatGUI:
     def __init__(self, root):
         self.root = root
-        root.title("OPL480pCheatGen — 480p/240p Cheat Generator v1.1.0 — © 2025 ArcanBytes | tiempoinfinito.com")
+        root.title(
+            f"OPL480pCheatGen — 480p/240p Cheat Generator v{__version__} — © 2025 ArcanBytes | tiempoinfinito.com"
+        )
         self.current_cht_text = ""
         self.current_cht_filename = None
 

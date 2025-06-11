@@ -3,6 +3,8 @@ import shutil
 import zipfile
 import PyInstaller.__main__
 
+from opl480pcheatgen import __version__
+
 def clean():
     for folder in ["build", "dist", "__pycache__"]:
         if os.path.exists(folder):
@@ -32,7 +34,8 @@ def build_exe(entry_script, name, data_files=[], icon=None, is_gui=False):
 
 def package_release():
     os.makedirs("release", exist_ok=True)
-    with zipfile.ZipFile("release/OPL480pCheatGen_v1.1.0.zip", 'w') as z:
+    zip_name = f"OPL480pCheatGen_v{__version__}.zip"
+    with zipfile.ZipFile(os.path.join("release", zip_name), 'w') as z:
         z.write('dist/OPL480pCheatGenGUI.exe', arcname='OPL480pCheatGenGUI.exe')
         z.write('dist/OPL480pCheatGen.exe', arcname='OPL480pCheatGen.exe')
         z.write('dist/mastercodes.json', arcname='mastercodes.json')
@@ -64,5 +67,5 @@ if __name__ == "__main__":
     print("[INFO] Packaging release...")
     package_release()
 
-    print("[DONE] Release zip created in ./release: OPL480pCheatGen_v1.1.0.zip")
+    print(f"[DONE] Release zip created in ./release: OPL480pCheatGen_v{__version__}.zip")
     clean()
