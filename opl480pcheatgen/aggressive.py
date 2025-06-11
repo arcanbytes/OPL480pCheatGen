@@ -1,6 +1,7 @@
 """Helpers for aggressive DISPLAY patch generation."""
 
 from typing import List, Tuple
+import struct
 
 DISPLAY1_ADDR = 0x12000080
 DISPLAY2_ADDR = 0x120000A0
@@ -21,6 +22,31 @@ def _addu(rd: int, rs: int, rt: int) -> int:
     return _r(0x21, rs, rt, rd)
 
 
+def _daddu(rd: int, rs: int, rt: int) -> int:
+    """Assemble a ``daddu`` instruction."""
+    return _r(0x2D, rs, rt, rd)
+
+
+def _addiu(rt: int, rs: int, imm: int) -> int:
+    """Assemble an ``addiu`` instruction."""
+    return (0x09 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)
+
+
+def _sll(rd: int, rt: int, sa: int) -> int:
+    """Assemble a ``sll`` instruction."""
+    return _r(0x00, 0, rt, rd, sa)
+
+
+def _sd(rt: int, base: int, disp: int) -> int:
+    """Assemble an ``sd`` instruction."""
+    return (0x3F << 26) | (base << 21) | (rt << 16) | (disp & 0xFFFF)
+
+
+def _ld(rt: int, base: int, disp: int) -> int:
+    """Assemble an ``ld`` instruction."""
+    return (0x37 << 26) | (base << 21) | (rt << 16) | (disp & 0xFFFF)
+
+
 def _lui(rt: int, imm: int) -> int:
     """Assemble a ``lui`` instruction."""
     return (0x0F << 26) | (rt << 16) | (imm & 0xFFFF)
@@ -31,19 +57,23 @@ def _j(addr: int) -> int:
     return (0x02 << 26) | ((addr // 4) & 0x03FFFFFF)
 
 
-def generate_display_patch(orig_insn: int, reg: int, patch_addr: int, ret_addr: int) -> List[Tuple[int, int]]:
-    """Generate instructions that modify DISPLAY register writes."""
-    t0 = 8
-    at = 1
-    vals = [
-        _or(t0, reg, 0),
-        _lui(at, 1),
-        _addu(reg, reg, at),
-        orig_insn,
-        _or(reg, t0, 0),
+def generate_display_patch(orig_insn: int, reg: int, patch_addr: int, ret_addr: int, with_store: bool) -> List[Tuple[int, int]]:
+    """Generate instructions matching ps2force480p's aggressive patch."""
+    sp = 29
+    temp = 6 if reg == 5 else 5
+
+    vals = []
+    if with_store:
+        vals.append(_sd(temp, sp, -8))
+    vals.extend([
+        _addiu(temp, 0, 0x10),
+        _sll(temp, temp, 12),
+        _daddu(reg, temp, reg),
+        _ld(temp, sp, -8),
         _j(ret_addr),
-        0x00000000,
-    ]
+        orig_insn,
+    ])
+
     return [((0x20 << 24) | ((patch_addr + i * 4) & 0x00FFFFFF), v) for i, v in enumerate(vals)]
 
 
@@ -80,5 +110,59 @@ def find_sd(insns, include_all: bool = False):
                         elif include_all:
                             matches.append((ins.address, ins.bytes, ins.operands[0].reg, None, None, None))
         prev = ins
+    return matches
+
+
+def scan_sd(
+    data: bytes,
+    base_addr: int,
+    target: int,
+    endian: str,
+) -> List[tuple[int, bytes, int, int | None, bytes | None, int | None]]:
+    """Raw search for ``sd`` instructions storing to *target* address."""
+    matches = []
+    regs = [0] * 32
+    for off in range(0, len(data) - 4, 4):
+        word = struct.unpack_from(endian + 'I', data, off)[0]
+        opr = (word >> 26) & 0x3F
+        rs = (word >> 21) & 0x1F
+        rt = (word >> 16) & 0x1F
+        rd = (word >> 11) & 0x1F
+        funct = word & 0x3F
+        imm = word & 0xFFFF
+        if opr == 0x0F:  # lui
+            regs[rt] = (imm << 16) & 0xFFFFFFFF
+        elif opr == 0x09:  # addiu
+            if imm & 0x8000:
+                imm |= -0x10000
+            regs[rt] = (regs[rs] + imm) & 0xFFFFFFFF
+        elif opr == 0x0D:  # ori
+            regs[rt] = regs[rs] | imm
+        elif opr == 0x00 and funct in (0x25, 0x21, 0x2D):  # or/addu/daddu
+            if funct == 0x25:
+                regs[rd] = regs[rs] | regs[rt]
+            else:
+                regs[rd] = (regs[rs] + regs[rt]) & 0xFFFFFFFF
+        elif opr == 0x3F:  # sd
+            if imm & 0x8000:
+                imm |= -0x10000
+            if (regs[rs] + imm) & 0xFFFFFFFF == target:
+                prev_off = off - 4
+                prev_bytes = data[prev_off:prev_off + 4] if prev_off >= 0 else None
+                prev_word = (
+                    struct.unpack_from(endian + 'I', data, prev_off)[0]
+                    if prev_off >= 0
+                    else None
+                )
+                matches.append(
+                    (
+                        base_addr + off,
+                        data[off:off + 4],
+                        rt,
+                        base_addr + prev_off if prev_off >= 0 else None,
+                        prev_bytes,
+                        prev_word,
+                    )
+                )
     return matches
 
