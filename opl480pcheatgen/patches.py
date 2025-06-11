@@ -27,6 +27,7 @@ from .helpers import (
 from .aggressive import (
     DISPLAY1_ADDR,
     DISPLAY2_ADDR,
+    SMODE2_ADDR,
     generate_display_patch,
     scan_sd,
     _sd,
@@ -305,6 +306,7 @@ def extract_patches(
     default_mode = None
     all_d2 = []
     aggr_hits = []
+    smode2_hits = []
 
     if not os.path.isfile(elf_path):
         sys.exit(f"Error: File not found: {elf_path}")
@@ -332,6 +334,7 @@ def extract_patches(
                 endian = "<" if elf.little_endian else ">"
                 aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR, endian))
                 aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR, endian))
+            smode2_hits.extend(scan_sd(data, vaddr, SMODE2_ADDR, endian))
 
         if aggressive or debug_aggr:
             print(
@@ -538,9 +541,54 @@ def extract_patches(
     if persona_patch:
         cheats.append(persona_patch)
 
+    pal60_block = None
+    if region == "PAL" and pal60:
+        if smode2_hits:
+            print(
+                f"[DEBUG] Found SMODE2 write at 0x{smode2_hits[0][0]:08X} \u2192 generating PAL60 override"
+            )
+            patch_base = (smode2_hits[0][0] & 0xFFFF0000) + 0x200
+            patch_lines = []
+            offset = 0
+            for addr, b, reg, prev_addr, prev_bytes, prev_word in smode2_hits:
+                if prev_addr is None:
+                    print(
+                        f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping PAL60 patch generation."
+                    )
+                    continue
+                ret_addr = addr + 4
+                delay_opcode = struct.unpack(endian + "I", prev_bytes)[0]
+                use_store = True
+                store_insn = _sd(6 if reg == 5 else 5, 29, -8)
+                opr = (prev_word >> 26) & 0x3F
+                rs = (prev_word >> 21) & 0x1F
+                rt = (prev_word >> 16) & 0x1F
+                if opr == 4 and rs == 0 and rt == 0:
+                    off = prev_word & 0xFFFF
+                    if off & 0x8000:
+                        off |= -0x10000
+                    ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
+                    delay_opcode = store_insn
+                    use_store = False
+                patch_addr = patch_base + offset
+                j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
+                patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
+                patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
+                if len(b) == 4:
+                    orig = struct.unpack(endian + "I", b)[0]
+                    patch_lines.extend(
+                        generate_display_patch(orig, reg, patch_addr, ret_addr, use_store)
+                    )
+                offset += (7 if use_store else 6) * 4
+            pal60_block = ("//PAL60 refresh patch", patch_lines)
+        else:
+            print("[WARN] No SMODE2 writes detected; skipping PAL60 override")
+
     if all_d2:
         cheats.append(("//NOP DISPLAY2 writes", all_d2))
         print(f"[INFO] Found {len(all_d2)} DISPLAY2 writes — patching to NOP.")
+    if pal60_block:
+        cheats.append(pal60_block)
 
     if region == "PAL" and reset and pal60:
         if has_60hz:

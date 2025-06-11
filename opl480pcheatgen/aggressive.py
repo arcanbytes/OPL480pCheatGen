@@ -5,6 +5,7 @@ import struct
 
 DISPLAY1_ADDR = 0x12000080
 DISPLAY2_ADDR = 0x120000A0
+SMODE2_ADDR = 0x12000020
 
 
 def _r(funct: int, rs: int, rt: int, rd: int, sa: int = 0) -> int:
