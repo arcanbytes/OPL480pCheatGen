@@ -343,7 +343,7 @@ def extract_patches(
             for addr, b, reg, prev_addr, prev_bytes, _prev in aggr_hits:
                 prev_name = f"0x{_prev:08X}" if _prev is not None else "None"
                 print(
-                    f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev opcode: {prev_name}"
+                    f"  [DEBUG] sd @ {addr:08X} - reg: ${reg} - prev opcode: {prev_name}"
                 )
 
         dy_patch = None
@@ -545,7 +545,7 @@ def extract_patches(
     if region == "PAL" and pal60:
         if smode2_hits:
             print(
-                f"[DEBUG] Found SMODE2 write at 0x{smode2_hits[0][0]:08X} \u2192 generating PAL60 override"
+                f"[DEBUG] Found SMODE2 write at 0x{smode2_hits[0][0]:08X} -> generating PAL60 override"
             )
             patch_base = (smode2_hits[0][0] & 0xFFFF0000) + 0x200
             patch_lines = []
@@ -586,7 +586,7 @@ def extract_patches(
 
     if all_d2:
         cheats.append(("//NOP DISPLAY2 writes", all_d2))
-        print(f"[INFO] Found {len(all_d2)} DISPLAY2 writes — patching to NOP.")
+        print(f"[INFO] Found {len(all_d2)} DISPLAY2 writes - patching to NOP.")
     if pal60_block:
         cheats.append(pal60_block)
 
