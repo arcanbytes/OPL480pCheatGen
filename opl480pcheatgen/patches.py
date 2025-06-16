@@ -543,7 +543,9 @@ def extract_patches(
 
     pal60_block = None
     if region == "PAL" and pal60:
-        if smode2_hits:
+        if has_60hz:
+            print("[INFO] Skipping PAL60 patch (mode already present)")
+        elif smode2_hits:
             print(
                 f"[DEBUG] Found SMODE2 write at 0x{smode2_hits[0][0]:08X} -> generating PAL60 override"
             )
@@ -590,39 +592,36 @@ def extract_patches(
     if pal60_block:
         cheats.append(pal60_block)
 
-    if region == "PAL" and reset and pal60:
-        if has_60hz:
-            print("[INFO] Skipping PAL60 patch (mode already present)")
-        else:
-            pal_val = params.get(12)
-            if pal_val is not None:
-                ntsc_val = (pal_val & 0xFFFFFF00) | 0x60
-                addr_to_patch = (0x20 << 24) | ((reset + 12 * 4) & 0x00FFFFFF)
-                patched = False
-                for i in range(1, len(cheats)):
-                    patch_lines = cheats[i][1]
-                    for j, (a, v) in enumerate(patch_lines):
-                        if a == addr_to_patch:
-                            patch_lines[j] = (a, ntsc_val)
-                            patched = True
-                            print(
-                                f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}"
-                            )
-                            break
-                    if patched:
+    if region == "PAL" and reset and pal60 and not has_60hz:
+        pal_val = params.get(12)
+        if pal_val is not None:
+            ntsc_val = (pal_val & 0xFFFFFF00) | 0x60
+            addr_to_patch = (0x20 << 24) | ((reset + 12 * 4) & 0x00FFFFFF)
+            patched = False
+            for i in range(1, len(cheats)):
+                patch_lines = cheats[i][1]
+                for j, (a, v) in enumerate(patch_lines):
+                    if a == addr_to_patch:
+                        patch_lines[j] = (a, ntsc_val)
+                        patched = True
+                        print(
+                            f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}"
+                        )
                         break
-                if not patched:
-                    cheats.append(
-                        ("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)])
-                    )
-                    print(
-                        f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}"
-                    )
-            else:
-                print(
-                    "[WARN] Original PAL refresh constant not found; skipping region switch."
+                if patched:
+                    break
+            if not patched:
+                cheats.append(
+                    ("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)])
                 )
-    elif region == "PAL":
+                print(
+                    f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}"
+                )
+        else:
+            print(
+                "[WARN] Original PAL refresh constant not found; skipping region switch."
+            )
+    elif region == "PAL" and not pal60:
         print("[INFO] Skipping PAL<->NTSC switch.")
 
     table_vals = [

@@ -24,7 +24,7 @@ You can always get the latest compiled version here:
 - ✅ **Force 480p output**
 - ✅ **Optional Patches**:
   - Force 240p output
-  - Enable PAL 60Hz (for PAL-region games; detects SMODE2 writes and overrides refresh rate)
+  - Enable PAL 60Hz (for PAL-region games; auto-skipped if already present)
   - Adjust vertical offset (DY)
    
 - ✅ **Auto-detect ELF from ISO** via `SYSTEM.CNF` (no user input needed)
@@ -62,7 +62,7 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only
 
 # Optional flags:
 --preview-only        # Show .cht content in console, do not write file
---pal60               # Enable PAL 60Hz mode (forces progressive output)
+--pal60               # Enable PAL 60Hz mode (skips if already supported)
 --force-240p          # Use 240p instead of 480p
 --dy 51               # Override vertical offset (DY)
 --mastercode "CODE"   # Manually override mastercode
