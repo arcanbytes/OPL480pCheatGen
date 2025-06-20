@@ -37,21 +37,26 @@ class OPLCheatGUI:
 
         mode_frame = ttk.Frame(options)
         ttk.Label(mode_frame, text="Video patch:").pack(side='left')
-        mode_cb = ttk.Combobox(
+        self.mode_cb = ttk.Combobox(
             mode_frame,
             textvariable=self.video_mode,
             values=["480p", "240p", "No change"],
             state="readonly",
             width=12,
         )
-        mode_cb.pack(side='left', padx=5)
+        self.mode_cb.pack(side='left', padx=5)
         mode_frame.pack(anchor='w', padx=10)
 
         ttk.Checkbutton(options, text="Enable 60Hz (for PAL games)", variable=self.pal60_patch).pack(anchor='w', padx=10)
         dy_frame = ttk.Frame(options)
-        ttk.Checkbutton(dy_frame, text="Vertical offset", variable=self.dy_patch).pack(side='left')
-        tk.Spinbox(dy_frame, from_=-100, to=100, width=5, textvariable=self.dy_value).pack(side='left', padx=5)
+        self.dy_chk = ttk.Checkbutton(dy_frame, text="Vertical offset", variable=self.dy_patch)
+        self.dy_chk.pack(side='left')
+        self.dy_spin = tk.Spinbox(dy_frame, from_=-100, to=100, width=5, textvariable=self.dy_value)
+        self.dy_spin.pack(side='left', padx=5)
         dy_frame.pack(anchor='w', padx=10, pady=(0,5))
+
+        self.mode_cb.bind("<<ComboboxSelected>>", lambda e: self.update_dy_state())
+        self.update_dy_state()
 
         # Generate button
         ttk.Button(root, text="Generate .cht", command=self.generate_cht).pack(pady=10)
@@ -93,6 +98,14 @@ class OPLCheatGUI:
         path = filedialog.askopenfilename(filetypes=[("PS2 ISO files", "*.iso *.ISO")])
         if path:
             self.file_path.set(path)
+
+    def update_dy_state(self):
+        enabled = self.video_mode.get() != "No change"
+        state = "normal" if enabled else "disabled"
+        self.dy_chk.config(state=state)
+        self.dy_spin.config(state=state)
+        if not enabled:
+            self.dy_patch.set(False)
             
     def show_cht_preview(self, text):
         self.current_cht_text = text

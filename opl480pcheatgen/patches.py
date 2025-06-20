@@ -665,7 +665,8 @@ def extract_patches(
 
     if skip_force_patch:
         need_tbl_patch = False
-        include_init_constants = False
+        if new_dy is None:
+            include_init_constants = False
 
     if need_tbl_patch or include_init_constants:
         tbl_codes = [

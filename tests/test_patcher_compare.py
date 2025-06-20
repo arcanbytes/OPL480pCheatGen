@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 import py7zr
+import pytest
 
 import sys
 
@@ -14,6 +15,8 @@ from opl480pcheatgen.patcher import patch_elf
 def _extract(name: str, tmp_path: Path) -> Path:
     """Extract 7z archive *name* into *tmp_path* and return root dir."""
     arch_path = Path(__file__).parent.parent / ".temp" / name
+    if not arch_path.exists():
+        pytest.skip(f"archive {arch_path} not available")
     with py7zr.SevenZipFile(arch_path, mode="r") as zf:
         zf.extractall(path=tmp_path)
     # archive contains a single folder

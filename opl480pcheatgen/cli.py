@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
                 force_aggr_skip=args.force_aggr_skip,
                 inject_hook=args.inject_hook,
                 inject_handler=args.inject_handler,
+                include_init_constants=args.interlace_patch or args.force_240p or args.dy is not None,
             )
         return patch_elf(
             args.input,
@@ -126,12 +127,12 @@ def main(argv: list[str] | None = None) -> int:
             force_aggr_skip=args.force_aggr_skip,
             inject_hook=args.inject_hook,
             inject_handler=args.inject_handler,
-            include_init_constants=False,
+            include_init_constants=args.interlace_patch or args.force_240p or args.dy is not None,
         )
 
     if args.input.lower().endswith(".iso"):
         elf, base = extract_from_iso(args.input, args.elfpath)
-        inc_consts = args.interlace_patch or args.force_240p
+        inc_consts = args.interlace_patch or args.force_240p or args.dy is not None
         cheats, game_id, title = extract_patches(
             elf,
             base_override=base,
@@ -148,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
             include_init_constants=inc_consts,
         )
     else:
-        inc_consts = args.interlace_patch or args.force_240p
+        inc_consts = args.interlace_patch or args.force_240p or args.dy is not None
         cheats, game_id, title = extract_patches(
             args.input,
             manual_mc=args.mastercode,
