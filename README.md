@@ -38,8 +38,9 @@ You can always get the latest compiled version here:
 
 Run `OPL480pCheatGenGUI.exe`:
 
-- Select an ISO 
+- Select an ISO
 - Choose your patch options
+  - Video patch menu defaults to **480p**
 - Preview the `.cht` content
 - Click **Write .cht file** to save
 
