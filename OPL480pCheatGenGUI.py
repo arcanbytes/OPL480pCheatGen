@@ -26,16 +26,27 @@ class OPLCheatGUI:
         ttk.Button(file_frame, text="Browse", command=self.select_file).pack(side='left')
 
         # Options
-        self.force_240p = tk.BooleanVar()
-        self.disable_interlace = tk.BooleanVar(value=True)
+        # Default mode patches the game to 480p. Allow user to select other modes
+        # via a drop-down menu. "No change" disables the interlace patch.
+        self.video_mode = tk.StringVar(value="480p")
         self.pal60_patch = tk.BooleanVar()
         self.dy_patch = tk.BooleanVar()
         self.dy_value = tk.IntVar(value=51)
         options = ttk.LabelFrame(root, text="Options")
         options.pack(fill='x', padx=10, pady=5)
 
-        ttk.Checkbutton(options, text="Force 240p output", variable=self.force_240p).pack(anchor='w', padx=10)
-        #ttk.Checkbutton(options, text="Disable interlace mode (480i)", variable=self.disable_interlace).pack(anchor='w', padx=10)
+        mode_frame = ttk.Frame(options)
+        ttk.Label(mode_frame, text="Video patch:").pack(side='left')
+        mode_cb = ttk.Combobox(
+            mode_frame,
+            textvariable=self.video_mode,
+            values=["480p", "240p", "No change"],
+            state="readonly",
+            width=12,
+        )
+        mode_cb.pack(side='left', padx=5)
+        mode_frame.pack(anchor='w', padx=10)
+
         ttk.Checkbutton(options, text="Enable 60Hz (for PAL games)", variable=self.pal60_patch).pack(anchor='w', padx=10)
         dy_frame = ttk.Frame(options)
         ttk.Checkbutton(dy_frame, text="Vertical offset", variable=self.dy_patch).pack(side='left')
@@ -110,9 +121,10 @@ class OPLCheatGUI:
             # When running from .py, explicitly invoke Python interpreter
             cmd = [sys.executable, os.path.join(os.path.dirname(__file__), "OPL480pCheatGen.py"), path, "--preview-only"]
 
-        if not self.disable_interlace.get():
+        mode = self.video_mode.get()
+        if mode == "No change":
             cmd.append("--no-interlace-patch")
-        if self.force_240p.get():
+        elif mode == "240p":
             cmd.append("--force-240p")
         if self.pal60_patch.get():
             cmd.append("--pal60")
