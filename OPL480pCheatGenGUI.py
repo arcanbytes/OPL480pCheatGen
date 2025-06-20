@@ -145,7 +145,8 @@ class OPLCheatGUI:
                 # Handles errors if the CLI returns an error code
                 error_output = f"[ERROR] CLI tool returned an error (code: {e.returncode}):\n{e.output}"
                 self.root.after(0, self.show_output, error_output)
-                self.root.after(0, lambda: messagebox.showerror("CLI Error", f"There was an error running the CLI tool:\n{e.output.strip()}"))
+                output_snippet = e.output.strip()
+                self.root.after(0, lambda out=output_snippet: messagebox.showerror("CLI Error", f"There was an error running the CLI tool:\n{out}"))
             except FileNotFoundError:
                 # Handles the case where the CLI executable is missing
                 error_msg = f"[ERROR] Executable not found {script_or_exe}. Make sure it is in the same directory as the GUI or in your PATH."

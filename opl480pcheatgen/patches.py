@@ -27,6 +27,7 @@ from .helpers import (
 from .aggressive import (
     DISPLAY1_ADDR,
     DISPLAY2_ADDR,
+    SMODE2_ADDR,
     generate_display_patch,
     scan_sd,
     _sd,
@@ -305,6 +306,7 @@ def extract_patches(
     default_mode = None
     all_d2 = []
     aggr_hits = []
+    smode2_hits = []
 
     if not os.path.isfile(elf_path):
         sys.exit(f"Error: File not found: {elf_path}")
@@ -332,6 +334,7 @@ def extract_patches(
                 endian = "<" if elf.little_endian else ">"
                 aggr_hits.extend(scan_sd(data, vaddr, DISPLAY1_ADDR, endian))
                 aggr_hits.extend(scan_sd(data, vaddr, DISPLAY2_ADDR, endian))
+            smode2_hits.extend(scan_sd(data, vaddr, SMODE2_ADDR, endian))
 
         if aggressive or debug_aggr:
             print(
@@ -340,7 +343,7 @@ def extract_patches(
             for addr, b, reg, prev_addr, prev_bytes, _prev in aggr_hits:
                 prev_name = f"0x{_prev:08X}" if _prev is not None else "None"
                 print(
-                    f"  [DEBUG] sd @ {addr:08X} — reg: ${reg} — prev opcode: {prev_name}"
+                    f"  [DEBUG] sd @ {addr:08X} - reg: ${reg} - prev opcode: {prev_name}"
                 )
 
         dy_patch = None
@@ -538,43 +541,87 @@ def extract_patches(
     if persona_patch:
         cheats.append(persona_patch)
 
-    if all_d2:
-        cheats.append(("//NOP DISPLAY2 writes", all_d2))
-        print(f"[INFO] Found {len(all_d2)} DISPLAY2 writes — patching to NOP.")
-
-    if region == "PAL" and reset and pal60:
+    pal60_block = None
+    if region == "PAL" and pal60:
         if has_60hz:
             print("[INFO] Skipping PAL60 patch (mode already present)")
-        else:
-            pal_val = params.get(12)
-            if pal_val is not None:
-                ntsc_val = (pal_val & 0xFFFFFF00) | 0x60
-                addr_to_patch = (0x20 << 24) | ((reset + 12 * 4) & 0x00FFFFFF)
-                patched = False
-                for i in range(1, len(cheats)):
-                    patch_lines = cheats[i][1]
-                    for j, (a, v) in enumerate(patch_lines):
-                        if a == addr_to_patch:
-                            patch_lines[j] = (a, ntsc_val)
-                            patched = True
-                            print(
-                                f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}"
-                            )
-                            break
-                    if patched:
-                        break
-                if not patched:
-                    cheats.append(
-                        ("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)])
-                    )
+        elif smode2_hits:
+            print(
+                f"[DEBUG] Found SMODE2 write at 0x{smode2_hits[0][0]:08X} -> generating PAL60 override"
+            )
+            patch_base = (smode2_hits[0][0] & 0xFFFF0000) + 0x200
+            patch_lines = []
+            offset = 0
+            for addr, b, reg, prev_addr, prev_bytes, prev_word in smode2_hits:
+                if prev_addr is None:
                     print(
-                        f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}"
+                        f"[WARN] No preceding instruction for sd at {addr:08X}. Skipping PAL60 patch generation."
                     )
-            else:
-                print(
-                    "[WARN] Original PAL refresh constant not found; skipping region switch."
+                    continue
+                ret_addr = addr + 4
+                delay_opcode = struct.unpack(endian + "I", prev_bytes)[0]
+                use_store = True
+                store_insn = _sd(6 if reg == 5 else 5, 29, -8)
+                opr = (prev_word >> 26) & 0x3F
+                rs = (prev_word >> 21) & 0x1F
+                rt = (prev_word >> 16) & 0x1F
+                if opr == 4 and rs == 0 and rt == 0:
+                    off = prev_word & 0xFFFF
+                    if off & 0x8000:
+                        off |= -0x10000
+                    ret_addr = prev_addr + 4 + ((off & 0xFFFFFFFF) << 2)
+                    delay_opcode = store_insn
+                    use_store = False
+                patch_addr = patch_base + offset
+                j_code = 0x08000000 | ((patch_addr // 4) & 0x03FFFFFF)
+                patch_lines.append(((0x20 << 24) | (prev_addr & 0x00FFFFFF), j_code))
+                patch_lines.append(((0x20 << 24) | (addr & 0x00FFFFFF), delay_opcode))
+                if len(b) == 4:
+                    orig = struct.unpack(endian + "I", b)[0]
+                    patch_lines.extend(
+                        generate_display_patch(orig, reg, patch_addr, ret_addr, use_store)
+                    )
+                offset += (7 if use_store else 6) * 4
+            pal60_block = ("//PAL60 refresh patch", patch_lines)
+        else:
+            print("[WARN] No SMODE2 writes detected; skipping PAL60 override")
+
+    if all_d2:
+        cheats.append(("//NOP DISPLAY2 writes", all_d2))
+        print(f"[INFO] Found {len(all_d2)} DISPLAY2 writes - patching to NOP.")
+    if pal60_block:
+        cheats.append(pal60_block)
+
+    if region == "PAL" and reset and pal60 and not has_60hz:
+        pal_val = params.get(12)
+        if pal_val is not None:
+            ntsc_val = (pal_val & 0xFFFFFF00) | 0x60
+            addr_to_patch = (0x20 << 24) | ((reset + 12 * 4) & 0x00FFFFFF)
+            patched = False
+            for i in range(1, len(cheats)):
+                patch_lines = cheats[i][1]
+                for j, (a, v) in enumerate(patch_lines):
+                    if a == addr_to_patch:
+                        patch_lines[j] = (a, ntsc_val)
+                        patched = True
+                        print(
+                            f"[INFO] PAL<->NTSC switch: updated existing patch at 0x{a:08X}"
+                        )
+                        break
+                if patched:
+                    break
+            if not patched:
+                cheats.append(
+                    ("//PAL<->NTSC switch patch", [(addr_to_patch, ntsc_val)])
                 )
-    elif region == "PAL":
+                print(
+                    f"[INFO] PAL<->NTSC switch added: 0x{pal_val:08X} --> 0x{ntsc_val:08X}"
+                )
+        else:
+            print(
+                "[WARN] Original PAL refresh constant not found; skipping region switch."
+            )
+    elif region == "PAL" and not pal60:
         print("[INFO] Skipping PAL<->NTSC switch.")
 
     table_vals = [
