@@ -302,6 +302,8 @@ def extract_patches(
         params = {11: 0x24110000, 12: 0x24120050, 15: 0x24130001}
         patch_title = "//Force 480p Progressive"
 
+    skip_force_patch = not interlace_patch and not force_240p
+
     reset = None
     default_mode = None
     all_d2 = []
@@ -518,7 +520,7 @@ def extract_patches(
         w0, h0, i0 = default_mode
         print(f"[INFO] Game default: {w0}×{h0} {'interlaced' if i0 else 'progressive'}")
 
-    if reset:
+    if reset and not skip_force_patch:
         need_patch = (
             force_240p or not default_mode or (not default_mode[2] and not force_240p)
         )
@@ -579,7 +581,9 @@ def extract_patches(
                 if len(b) == 4:
                     orig = struct.unpack(endian + "I", b)[0]
                     patch_lines.extend(
-                        generate_display_patch(orig, reg, patch_addr, ret_addr, use_store)
+                        generate_display_patch(
+                            orig, reg, patch_addr, ret_addr, use_store
+                        )
                     )
                 offset += (7 if use_store else 6) * 4
             pal60_block = ("//PAL60 refresh patch", patch_lines)
@@ -658,6 +662,10 @@ def extract_patches(
                     if val != 0:
                         need_tbl_patch = False
                 break
+
+    if skip_force_patch:
+        need_tbl_patch = False
+        include_init_constants = False
 
     if need_tbl_patch or include_init_constants:
         tbl_codes = [

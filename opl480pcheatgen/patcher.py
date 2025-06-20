@@ -57,6 +57,7 @@ def patch_elf(
     include_init_constants: bool = False,
 ) -> int:
     """Patch *path* ELF file in place."""
+    inc_consts = include_init_constants and (interlace_patch or force_240p)
     cheats, _gid, _title = extract_patches(
         path,
         interlace_patch=interlace_patch,
@@ -68,7 +69,7 @@ def patch_elf(
         force_aggr_skip=force_aggr_skip,
         inject_hook=inject_hook,
         inject_handler=inject_handler,
-        include_init_constants=include_init_constants,
+        include_init_constants=inc_consts,
     )
     patch_lines = []
     for _hdr, codes in cheats[1:]:
@@ -127,6 +128,7 @@ def patch_iso(
         iso.close()
 
     base = os.path.basename(boot).split(";")[0]
+    inc_consts = include_init_constants and (interlace_patch or force_240p)
     cheats, _gid, _title = extract_patches(
         tmp.name,
         base_override=base,
@@ -139,7 +141,7 @@ def patch_iso(
         force_aggr_skip=force_aggr_skip,
         inject_hook=inject_hook,
         inject_handler=inject_handler,
-        include_init_constants=include_init_constants,
+        include_init_constants=inc_consts,
     )
     patch_lines = []
     for _hdr, codes in cheats[1:]:
