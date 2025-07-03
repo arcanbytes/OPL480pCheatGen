@@ -32,7 +32,7 @@ pytest
 ```bash
 pytest tests/test_cli.py
 ```
-- Testing Files
+- Testing Files:
 The tests use ELFs extracted from PS2 game ISOs and are therefore not included. These ELF files are packaged in 7z files, and within each 7z there should be the original ELF and the ELF patched by OPL480pCheatGen. Make sure that the patching settings match those specified in each specific test. That said, you can easily create your own tests using any ISO; you just need to adapt the code a bit.
 
 ## Build/Packaging Process

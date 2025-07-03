@@ -6,7 +6,7 @@ import py7zr
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from opl480pcheatgen.patches import extract_patches
+from opl480pcheatgen.patch_generation import extract_patches
 
 
 def _extract(name: str, tmp_path: Path) -> Path:
