@@ -66,6 +66,7 @@ OPL480pCheatGen.exe "F:\RetroBat\roms\ps2\Game.iso" --preview-only
 --pal60               # Enable PAL 60Hz mode (skips if already supported)
 --force-240p          # Use 240p instead of 480p
 --dy 51               # Override vertical offset (DY)
+--aggressive          # Aggressively patch DISPLAY writes
 --mastercode "CODE"   # Manually override mastercode
 ```
 

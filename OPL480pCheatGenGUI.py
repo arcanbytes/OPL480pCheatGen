@@ -32,6 +32,7 @@ class OPLCheatGUI:
         self.pal60_patch = tk.BooleanVar()
         self.dy_patch = tk.BooleanVar()
         self.dy_value = tk.IntVar(value=51)
+        self.aggressive_patch = tk.BooleanVar()
         options = ttk.LabelFrame(root, text="Options")
         options.pack(fill='x', padx=10, pady=5)
 
@@ -54,6 +55,8 @@ class OPLCheatGUI:
         self.dy_spin = tk.Spinbox(dy_frame, from_=-100, to=100, width=5, textvariable=self.dy_value)
         self.dy_spin.pack(side='left', padx=5)
         dy_frame.pack(anchor='w', padx=10, pady=(0,5))
+
+        ttk.Checkbutton(options, text="Aggressive patch", variable=self.aggressive_patch).pack(anchor='w', padx=10)
 
         self.mode_cb.bind("<<ComboboxSelected>>", lambda e: self.update_dy_state())
         self.update_dy_state()
@@ -143,6 +146,8 @@ class OPLCheatGUI:
             cmd.append("--pal60")
         if self.dy_patch.get():
             cmd.extend(["--dy", str(self.dy_value.get())])
+        if self.aggressive_patch.get():
+            cmd.append("--aggressive")
         
         def run_patch():
             try:                
